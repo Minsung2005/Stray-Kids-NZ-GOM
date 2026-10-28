@@ -23,7 +23,7 @@ const supabaseClient = window.supabase && window.SUPABASE_CONFIG?.url && window.
 let cloudReady = false;
 let cloudSaving = false;
 const isAdminUnlocked = () => sessionStorage.getItem('go-manager-admin') === 'unlocked';
-const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules });
+const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules, claims: state.claims });
 let state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || DEMO;
 state.storeOrders ||= structuredClone(DEMO.storeOrders);
 state.payments ||= structuredClone(DEMO.payments);

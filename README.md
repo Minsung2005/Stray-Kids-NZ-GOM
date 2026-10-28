@@ -37,6 +37,8 @@ The app remains usable in demo mode when the config is empty. When configured, t
 
 The current admin tools sync their shared state through `app_public_state` and `app_private_state`. After creating the base schema, run the matching table and policy definitions from [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. Admin login uses the Supabase Auth email and password; local demo password login is used only when Supabase is not configured.
 
+Claim selections and usernames are included in the public synced state so every device can show shared set availability and who has claimed each option. After claims change, an organiser should use **Save to live site** in Admin to publish the latest state.
+
 ## GitHub Pages
 
 The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) deploys the repository root to Pages whenever `main` changes. In repository settings, set Pages to **GitHub Actions**. Since this is a static site, hash routes work without server rewrites.
