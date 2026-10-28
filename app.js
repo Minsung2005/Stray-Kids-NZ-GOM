@@ -22,6 +22,7 @@ const supabaseClient = window.supabase && window.SUPABASE_CONFIG?.url && window.
   : null;
 let cloudReady = false;
 let cloudSaving = false;
+let userAccountsReady = Promise.resolve();
 const isAdminUnlocked = () => sessionStorage.getItem('go-manager-admin') === 'unlocked';
 const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules, claims: state.claims });
 let state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || DEMO;
@@ -456,7 +457,34 @@ document.addEventListener('submit', async (event) => {
     return;
   }
   if (form.id === 'claim-form') { const values = claimStore(); if (!Object.values(values).some((value) => value > 0)) { notify('Choose at least one item first.'); return; } const goId = route().split('/')[1]; const go = goById(goId); const username = form.username.value.trim().replace(/^@/, ''); const selections = Object.fromEntries(Object.entries(values).filter(([, value]) => value > 0)); const selectedItems = new Set(); const amount = Object.entries(selections).reduce((sum, [key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); selectedItems.add(item.id); if (item.kind === 'set') { const option = key.slice(`${item.id}-`.length); item.claims[option] = (item.claims[option] || 0) + value; } else item.claimed = (item.claimed || 0) + value; return sum + item.price * value; }, 0); const firstItem = go.items.find((item) => Object.keys(selections).some((key) => key.startsWith(`${item.id}-`))); const claim = { username, goId, itemId: firstItem?.id || go.items[0].id, selections, amount, status: 'Pending', credit: 0 }; state.claims.unshift(claim); if (supabaseClient) { const result = await supabaseClient.from('claim_events').insert({ go_id: claim.goId, item_id: claim.itemId, instagram_username: claim.username, selections: claim.selections, amount: claim.amount, status: claim.status }).select('id').single(); if (result.error) { notify(`Claim sync failed: ${result.error.message}`); return; } claim.cloudClaimId = result.data.id; } save(); sessionStorage.setItem('go-manager-username', username.toLowerCase()); sessionStorage.removeItem('go-claim'); notify('Claim submitted. Check My orders for updates.'); window.location.hash = '#my-orders'; return; }
-  if (form.id === 'lookup-form') { const username = form.username.value.trim().replace(/^@/, '').toLowerCase(); const password = form.password.value; if (!username || !password) { notify('Enter your username and password.'); return; } const account = state.userAccounts[username]; if (form.createAccount.checked) { if (account) { notify('That username already has a password. Please sign in.'); return; } if (password.length < 6) { notify('Password must be at least 6 characters.'); return; } const salt = randomSalt(); const newAccount = { salt, hash: await hashPassword(password, salt), createdAt: new Date().toISOString() }; if (supabaseClient) { try { await saveUserAccount(username, newAccount); } catch (error) { notify(error.message); return; } } state.userAccounts[username] = newAccount; save(); sessionStorage.setItem('go-manager-username', username); render(); notify('Password created. Welcome to My orders.'); return; } if (!account) { notify('No password found. Tick the first-time option to create one.'); return; } if (await hashPassword(password, account.salt) !== account.hash) { notify('Incorrect password.'); return; } sessionStorage.setItem('go-manager-username', username); render(); return; }
+  if (form.id === 'lookup-form') {
+    await userAccountsReady;
+    const username = form.elements.namedItem('username').value.trim().replace(/^@/, '').toLowerCase();
+    const password = form.elements.namedItem('password').value;
+    const createAccount = form.elements.namedItem('createAccount').checked;
+    if (!username || !password) { notify('Enter your username and password.'); return; }
+    const account = state.userAccounts[username];
+    if (createAccount) {
+      if (account) { notify('That username already has a password. Please sign in.'); return; }
+      if (password.length < 6) { notify('Password must be at least 6 characters.'); return; }
+      const salt = randomSalt();
+      const newAccount = { salt, hash: await hashPassword(password, salt), createdAt: new Date().toISOString() };
+      if (supabaseClient) {
+        try { await saveUserAccount(username, newAccount); } catch (error) { notify(error.message); return; }
+      }
+      state.userAccounts[username] = newAccount;
+      save();
+      sessionStorage.setItem('go-manager-username', username);
+      render();
+      notify('Password created. Welcome to My orders.');
+      return;
+    }
+    if (!account) { notify('No password found. Tick the first-time option to create one.'); return; }
+    if (await hashPassword(password, account.salt) !== account.hash) { notify('Incorrect password.'); return; }
+    sessionStorage.setItem('go-manager-username', username);
+    render();
+    return;
+  }
   const data = new FormData(form);
   if (form.dataset.form === 'store-order') { state.storeOrders.unshift({ id: Date.now(), username: data.get('username').replace(/^@/, ''), vendor: data.get('vendor'), description: data.get('description'), amountOwed: Number(data.get('amountOwed')), status: data.get('status') }); save(); render(); notify('Store order added.'); return; }
   if (form.dataset.form === 'edit-claim') { const claim = state.claims[Number(form.dataset.claim)]; const amount = Number(data.get('amount')); if (!claim || !Number.isFinite(amount) || amount < 0) { notify('Enter a valid non-negative amount.'); return; } claim.amount = amount; save(); closeModal(); render(); notify(`Amount owed for @${claim.username} updated.`); return; }
@@ -490,5 +518,5 @@ if (supabaseClient) {
       loadClaimEvents();
     })
     .subscribe();
-  loadCloudState();
+  userAccountsReady = loadCloudState();
 }
