@@ -57,6 +57,8 @@ The Payments tab also includes all unpaid `Who owes me` claims, so an organiser 
 
 Paid claims automatically appear in Admin → Shipping. Add or edit the carrier and tracking number there; saving tracking marks the claim as shipped and removes it from the waiting queue.
 
+Saved shipment tracking is shown in the joiner's My orders view and in the Your shipments section.
+
 Set dropdowns show each set's member allocation, including the joiner's username for filled members and `Still available` for unfilled members. A set is secured once 80% of its member choices are filled.
 
 When a claim is submitted, each ordered set consumes one available set slot. This applies to both an OT8/full-set claim and an individual member claim, and the remaining stock is shown in the dropdown.
