@@ -258,6 +258,7 @@ document.addEventListener('submit', async (event) => {
       sessionStorage.setItem('go-manager-admin', 'unlocked');
       render();
       await loadCloudState();
+      save();
       notify('Admin mode unlocked.');
     } else if (form.password.value === ADMIN_PASSWORD) {
       sessionStorage.setItem('go-manager-admin', 'unlocked');
