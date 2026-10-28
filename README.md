@@ -43,7 +43,7 @@ The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) d
 
 ## Included organiser tools
 
-The admin surface includes payment confirmation/rejection, a shipping queue, reminder, export, packing-list and profit/cost entry points, with demo feedback states. The schema provides claims, payment proofs, credits, shipment requests, store orders, blocked users and a claim edit log so those tools can be wired to live data without changing the public routes.
+The admin surface includes payment confirmation/rejection, a shipping queue, Instagram and Discord reminder templates, export, packing-list and profit/cost entry points, with demo feedback states. The schema provides claims, payment proofs, credits, shipment requests, store orders, blocked users and a claim edit log so those tools can be wired to live data without changing the public routes.
 
 From Admin → GOs → Manage, organisers can add multiple dropdowns (items) to one group order, attach a picture to each dropdown, and move dropdowns up or down to control their public order.
 

@@ -291,7 +291,25 @@ document.addEventListener('click', (event) => { const button = event.target.clos
   if (action === 'toggle-go') { const go = goById(button.dataset.go); go.status = go.status === 'open' ? 'closed' : 'open'; save(); closeModal(); render(); notify(`${go.name} is now ${go.status}.`); }
   if (action === 'delete-go') { const go = goById(button.dataset.go); if (window.confirm(`Delete ${go.name}? This also removes its demo claims.`)) { state.orders = state.orders.filter((item) => item.id !== go.id); state.claims = state.claims.filter((claim) => claim.goId !== go.id); save(); closeModal(); render(); notify(`${go.name} deleted.`); } }
   if (action === 'duplicate-go') { const original = goById(button.dataset.go); const duplicate = structuredClone(original); duplicate.id = `${original.id}-copy-${Date.now()}`; duplicate.name = `${original.name} · copy`; duplicate.status = 'open'; state.orders.push(duplicate); save(); closeModal(); render(); notify('GO duplicated.'); }
-  if (action === 'reminders') { navigator.clipboard?.writeText('Kia ora! Friendly reminder that your GO payment is due soon. Please send your payment proof when ready.').catch(() => {}); notify('Reminder message copied for Instagram DMs.'); }
+  if (action === 'reminders') {
+    const reminders = [
+      ['Instagram · friendly', 'Kia ora! Friendly reminder that your GO payment is due soon. Please send your payment proof when ready.'],
+      ['Instagram · final reminder', 'Hi! This is a final reminder that your GO payment is due soon. Please send payment proof or message us if you need help.'],
+      ['Discord · group reminder', '📣 **GO payment reminder**\n\nKia ora everyone! If you have an unpaid claim, please send your payment by the deadline and submit your payment proof. Please check your Instagram username and amount before paying.'],
+      ['Discord · closing soon', '⏰ **GO closing soon**\n\nThis group order is closing soon. Please check your claim, confirm your member/quantity, and complete payment if you have not already. DM the organiser with any questions.']
+    ];
+    openModal('Reminder messages', `<p class="eyebrow">COPY-READY TEMPLATES</p><h2>Instagram & Discord reminders</h2><p class="modal-copy">Choose a message, then copy it to post or send.</p><div class="reminder-list">${reminders.map(([title, message], index) => `<article class="reminder-option"><div><strong>${title}</strong><pre>${message}</pre></div><button class="secondary-button" data-action="copy-reminder" data-reminder="${index}">Copy message</button></article>`).join('')}</div>`);
+  }
+  if (action === 'copy-reminder') {
+    const messages = [
+      'Kia ora! Friendly reminder that your GO payment is due soon. Please send your payment proof when ready.',
+      'Hi! This is a final reminder that your GO payment is due soon. Please send payment proof or message us if you need help.',
+      '📣 **GO payment reminder**\n\nKia ora everyone! If you have an unpaid claim, please send your payment by the deadline and submit your payment proof. Please check your Instagram username and amount before paying.',
+      '⏰ **GO closing soon**\n\nThis group order is closing soon. Please check your claim, confirm your member/quantity, and complete payment if you have not already. DM the organiser with any questions.'
+    ];
+    const message = messages[Number(button.dataset.reminder)];
+    if (message) navigator.clipboard?.writeText(message).then(() => notify('Reminder copied.')).catch(() => notify('Could not copy reminder.'));
+  }
   if (action === 'profit') { const metrics = financeMetrics(); openModal('Profit tracker', `<p class="eyebrow">MARGIN SNAPSHOT</p><h2>Track your costs</h2><p class="modal-copy">Projected value is pulled from current item prices and claimed quantities.</p><form data-form="profit"><label>Projected order value<input name="revenue" type="number" step="0.01" value="${metrics.projectedValue.toFixed(2)}" /></label><label>Logged vendor costs<input name="vendor" type="number" step="0.01" value="${metrics.loggedCosts.toFixed(2)}" /></label><label>EMS / shipping fees<input name="shipping" type="number" step="0.01" value="0" /></label><label>Other fees<input name="fees" type="number" step="0.01" value="0" /></label><button class="primary-button" type="submit">Calculate margin ↗</button></form>`); }
   if (action === 'export-roster') { const rows = [['Username', 'GO', 'Amount owed', 'Status'], ...state.claims.map((claim) => { const go = goById(claim.goId); const payment = state.payments.find((entry) => entry.username === claim.username && (!go || entry.go === go.name)); const paid = claim.status === 'Paid' || claim.status === 'Supplied' || payment?.status === 'Paid' || payment?.status === 'Supplied'; return [claim.username, go?.name || 'Unknown GO', claim.amount, paid ? 'Paid' : 'Unpaid']; })]; downloadFile('payment-roster.csv', rows.map((row) => row.join(',')).join('\n'), 'text/csv'); notify('Payment roster exported.'); }
   if (action === 'export-vendor') { const rows = [['GO', 'Artist', 'Status', 'Deadline', 'Items'], ...state.orders.map((go) => [go.name, go.artist, go.status, go.deadline, go.items.map((item) => item.name).join(' | ')] )]; downloadFile('vendor-order-sheet.csv', rows.map((row) => row.join(',')).join('\n'), 'text/csv'); notify('Vendor sheet exported.'); }
