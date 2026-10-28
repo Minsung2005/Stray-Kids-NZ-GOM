@@ -55,7 +55,7 @@ In Admin → Payments, use `Mark paid` on a payment proof to mark the matching j
 
 The Payments tab also includes all unpaid `Who owes me` claims, so an organiser can mark someone paid directly even when no payment proof has been submitted.
 
-Paid claims automatically appear in Admin → Shipping. Add or edit the carrier and tracking number there; saving tracking marks the claim as shipped and removes it from the waiting queue.
+Paid claims automatically appear in Admin → Shipping. Add or edit the carrier and tracking number there; saving tracking marks the claim as shipped. Shipped claims remain in the queue until you click `Mark delivered`, which updates the joiner's My orders status too.
 
 Saved shipment tracking is shown in the joiner's My orders view and in the Your shipments section.
 
