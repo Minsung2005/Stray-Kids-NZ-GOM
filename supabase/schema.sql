@@ -162,12 +162,19 @@ create table public.claim_edit_log (
   created_at timestamptz not null default now()
 );
 
-create or replace function public.is_admin() returns boolean language sql stable security definer set search_path = public as $$
-  select coalesce(auth.jwt() ->> 'email', '') = current_setting('app.admin_email', true)
-$$;
+create table public.admin_users (
+  email text primary key,
+  created_at timestamptz not null default now()
+);
 
--- Set this once in Supabase SQL editor for your admin account:
--- alter database postgres set app.admin_email = 'admin@example.com';
+alter table public.admin_users enable row level security;
+
+create or replace function public.is_admin() returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.admin_users
+    where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  )
+$$;
 
 alter table public.settings enable row level security;
 alter table public.app_public_state enable row level security;
@@ -184,6 +191,7 @@ alter table public.store_orders enable row level security;
 alter table public.blocked_users enable row level security;
 alter table public.rules enable row level security;
 alter table public.claim_edit_log enable row level security;
+alter table public.admin_users enable row level security;
 
 create policy "public reads open orders" on public.group_orders for select using (status = 'open' or public.is_admin());
 create policy "public reads app state" on public.app_public_state for select using (true);
