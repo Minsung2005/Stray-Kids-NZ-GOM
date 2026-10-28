@@ -63,6 +63,6 @@ Saved shipment tracking is shown in the joiner's My orders view and in the Your 
 
 Set dropdowns show each set's member allocation, including the joiner's username for filled members and `Still available` for unfilled members. A set is secured once 80% of its member choices are filled.
 
-When a claim is submitted, each ordered set consumes one available set slot. This applies to both an OT8/full-set claim and an individual member claim, and the remaining stock is shown in the dropdown.
+Set stock is tracked per dropdown option: three available sets means three units of every option. An individual member claim consumes stock only from that member, while an OT8/full-set claim consumes one unit from every option. The remaining stock is shown on each dropdown.
 
 Admins can edit existing dropdowns from the GO manager, including their name, type, price, stock/set count, member options, description, and picture.
