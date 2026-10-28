@@ -41,6 +41,8 @@ Claim selections and usernames are included in the public synced state so every 
 
 For cross-device claim submission, also run the `claim_events` table and policy definitions in [`supabase/schema.sql`](supabase/schema.sql). This lets joiners submit claims directly to Supabase while keeping claim usernames and selections visible to the public allocation view.
 
+My orders uses username/password accounts. Passwords are stored as salted hashes in the `user_accounts` table; run its table and policy definitions from [`supabase/schema.sql`](supabase/schema.sql) to enable cross-device login. Admin → Settings includes the customer password manager for resets and removals.
+
 ## GitHub Pages
 
 The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) deploys the repository root to Pages whenever `main` changes. In repository settings, set Pages to **GitHub Actions**. Since this is a static site, hash routes work without server rewrites.

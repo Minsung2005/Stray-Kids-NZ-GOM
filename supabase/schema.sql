@@ -86,6 +86,13 @@ create table public.claim_events (
   created_at timestamptz not null default now()
 );
 
+create table public.user_accounts (
+  username text primary key,
+  password_hash text not null,
+  password_salt text not null,
+  created_at timestamptz not null default now()
+);
+
 create table public.shop_listings (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -194,6 +201,7 @@ alter table public.group_orders enable row level security;
 alter table public.go_items enable row level security;
 alter table public.claims enable row level security;
 alter table public.claim_events enable row level security;
+alter table public.user_accounts enable row level security;
 alter table public.shop_listings enable row level security;
 alter table public.shop_orders enable row level security;
 alter table public.payment_proofs enable row level security;
@@ -220,6 +228,9 @@ create policy "public creates claim events" on public.claim_events for insert wi
   not exists (select 1 from public.blocked_users b where lower(b.instagram_username) = lower(instagram_username))
 );
 create policy "admin manages claim events" on public.claim_events for all using (public.is_admin()) with check (public.is_admin());
+create policy "public reads user accounts" on public.user_accounts for select using (true);
+create policy "public creates user accounts" on public.user_accounts for insert with check (true);
+create policy "admin manages user accounts" on public.user_accounts for all using (public.is_admin()) with check (public.is_admin());
 create policy "public sees active shop" on public.shop_listings for select using (active = true or public.is_admin());
 create policy "admin manages shop" on public.shop_listings for all using (public.is_admin()) with check (public.is_admin());
 create policy "public creates shop orders" on public.shop_orders for insert with check (true);
