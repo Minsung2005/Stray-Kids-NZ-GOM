@@ -46,3 +46,5 @@ The admin surface includes payment confirmation/rejection, a shipping queue, rem
 From Admin → GOs → Manage, organisers can add multiple dropdowns (items) to one group order, attach a picture to each dropdown, and move dropdowns up or down to control their public order.
 
 Dropdowns can also be deleted. Set dropdowns accept a set count and member options; joiners select the members they want and see the number of complete sets still available.
+
+New group orders include a sets-on-hand field. Set-based dropdowns secure at 80% of the configured set count for every member and show a visible `Secured` label on the GO once that threshold is reached.
