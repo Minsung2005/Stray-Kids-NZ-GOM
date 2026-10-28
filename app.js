@@ -26,7 +26,7 @@ let userAccountsReady = Promise.resolve();
 function dedupePayments(payments = []) {
   const seen = new Set();
   return payments.filter((payment) => {
-    const key = [payment.username, payment.go, payment.amount, payment.method, payment.reference]
+    const key = [payment.username, payment.go, payment.amount, payment.method]
       .map((value) => String(value ?? '').trim().toLowerCase())
       .join('|');
     if (seen.has(key)) return false;
