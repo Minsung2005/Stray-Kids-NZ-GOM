@@ -128,6 +128,7 @@ async function loadClaimEvents() {
     if (result.error.code !== '42P01') notify(`Claim sync failed: ${result.error.message}`);
     return;
   }
+  const unpublishedClaims = isAdminUnlocked() ? state.claims.filter((claim) => !claim.cloudClaimId) : [];
   state.claims = result.data.map((claim) => ({
     cloudClaimId: claim.id,
     username: claim.instagram_username,
@@ -138,7 +139,7 @@ async function loadClaimEvents() {
     status: claim.status,
     credit: 0,
     createdAt: claim.created_at
-  }));
+  })).concat(unpublishedClaims);
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   render();
 }
