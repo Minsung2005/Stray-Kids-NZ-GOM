@@ -23,11 +23,23 @@ const supabaseClient = window.supabase && window.SUPABASE_CONFIG?.url && window.
 let cloudReady = false;
 let cloudSaving = false;
 let userAccountsReady = Promise.resolve();
+function dedupePayments(payments = []) {
+  const seen = new Set();
+  return payments.filter((payment) => {
+    const key = [payment.username, payment.go, payment.amount, payment.method, payment.reference, payment.submitted, payment.status]
+      .map((value) => String(value ?? '').trim().toLowerCase())
+      .join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 const isAdminUnlocked = () => sessionStorage.getItem('go-manager-admin') === 'unlocked';
 const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules, claims: state.claims });
 let state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || DEMO;
 state.storeOrders ||= structuredClone(DEMO.storeOrders);
 state.payments ||= structuredClone(DEMO.payments);
+state.payments = dedupePayments(state.payments);
 state.claims ||= structuredClone(DEMO.claims);
 state.userAccounts ||= {};
 state.shop ||= structuredClone(DEMO.shop);
@@ -147,6 +159,7 @@ async function loadCloudState() {
     }
     if (privateResult.data?.state) {
       state = privateResult.data.state;
+      state.payments = dedupePayments(state.payments);
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       render();
     }
@@ -372,7 +385,8 @@ function adminPayments() {
   const firstUnpaidIndex = goGroups.findIndex((group) => group.claims.length);
   const search = '<label class="admin-search"><span>Search</span><input type="search" data-admin-search="payments" placeholder="Username, GO or reference" autocomplete="off" /></label>';
   const goSections = goGroups.map(({ go, claims, total }, index) => `<details class="payment-go-group" ${claims.length && index === firstUnpaidIndex ? 'open' : ''}><summary><span><strong>${go.name}</strong><small>${claims.length} unpaid claim${claims.length === 1 ? '' : 's'}</small></span><b>${money(total)}</b></summary><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount owed</th><th>Status</th><th></th></tr></thead><tbody>${claims.length ? claims.map(({ claim, index: claimIndex }) => `<tr data-admin-search-row="payments" data-search-text="${claim.username} ${go.name}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${claim.username}">@${claim.username}</button></td><td><strong>${money(claim.amount)}</strong></td><td><span class="claim-pill">${claim.status}</span></td><td><button class="table-action" data-action="edit-claim" data-claim="${claimIndex}">Adjust amount</button> <button class="table-action" data-action="mark-claim-paid" data-claim="${claimIndex}">Mark paid</button> <button class="table-action" data-action="packing-claim" data-claim="${claimIndex}">Packing slip</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Everyone is paid for this GO.</td></tr>'}</tbody></table></div></details>`).join('');
-  return `<div class="admin-toolbar"><div><h2>Payments</h2><p class="muted">Open group orders are separated below so you can work through each GO.</p></div>${search}<button class="primary-button" data-action="manual-payment">+ Add payment</button><span class="queue-count">${outstanding} outstanding</span></div><section class="payment-claims"><div class="sheet-heading"><div><p class="eyebrow">WHO OWES ME</p><h2>Open group orders</h2><p class="muted">Expand a GO to see its unpaid joiners.</p></div></div><div class="payment-go-list">${goSections || '<div class="table-card"><p class="muted">No open group orders.</p></div>'}</div></section><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount</th><th>Method / ref</th><th>Status</th><th>Submitted</th></tr></thead><tbody>${state.payments.map((payment) => { const paid = payment.status === 'Paid' || payment.status === 'Supplied'; return `<tr data-admin-search-row="payments" data-search-text="${payment.username} ${payment.go} ${payment.method} ${payment.reference} ${payment.status}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${payment.username}">@${payment.username}</button></td><td>${money(payment.amount)}</td><td>${payment.method}<br><span class="muted">${payment.reference}</span></td><td><span class="claim-pill ${payment.status.toLowerCase()}">${payment.status}</span></td><td>${payment.submitted}</td></tr>`; }).join('')}</tbody></table></div>`;
+  const paymentRows = dedupePayments(state.payments);
+  return `<div class="admin-toolbar"><div><h2>Payments</h2><p class="muted">Open group orders are separated below so you can work through each GO.</p></div>${search}<button class="primary-button" data-action="manual-payment">+ Add payment</button><span class="queue-count">${outstanding} outstanding</span></div><section class="payment-claims"><div class="sheet-heading"><div><p class="eyebrow">WHO OWES ME</p><h2>Open group orders</h2><p class="muted">Expand a GO to see its unpaid joiners.</p></div></div><div class="payment-go-list">${goSections || '<div class="table-card"><p class="muted">No open group orders.</p></div>'}</div></section><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount</th><th>Method / ref</th><th>Status</th><th>Submitted</th><th></th></tr></thead><tbody>${paymentRows.map((payment) => `<tr data-admin-search-row="payments" data-search-text="${payment.username} ${payment.go} ${payment.method} ${payment.reference} ${payment.status}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${payment.username}">@${payment.username}</button></td><td>${money(payment.amount)}</td><td>${payment.method}<br><span class="muted">${payment.reference}</span></td><td><span class="claim-pill ${payment.status.toLowerCase()}">${payment.status}</span></td><td>${payment.submitted}</td><td><button class="reject-action" data-action="delete-payment" data-payment="${payment.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>`;
 }
 function adminShipping() { const shippingClaims = state.claims.map((claim, index) => ({ claim, index })).filter(({ claim }) => ['Paid', 'Ready', 'Shipped'].includes(claim.status)); const search = '<label class="admin-search"><span>Search</span><input type="search" data-admin-search="shipping" placeholder="Username, GO or tracking" autocomplete="off" /></label>'; return `<div class="admin-toolbar"><div><h2>Shipping queue</h2><p class="muted">Paid claims remain here until marked delivered.</p></div>${search}<button class="secondary-button" data-action="packing">Generate packing list</button></div><div class="table-card"><table><thead><tr><th>Joiner</th><th>Group order</th><th>Amount</th><th>Tracking</th><th>Status</th><th></th></tr></thead><tbody>${shippingClaims.length ? shippingClaims.map(({ claim, index }) => { const go = goById(claim.goId); return `<tr data-admin-search-row="shipping" data-search-text="${claim.username} ${go?.name || ''} ${claim.trackingNumber || ''} ${claim.status}"><td><strong>@${claim.username}</strong></td><td>${go?.name || 'Unknown GO'}</td><td>${money(claim.amount)}</td><td>${claim.trackingNumber ? `${claim.carrier || 'Carrier'} · ${claim.trackingNumber}` : '<span class="muted">Not added</span>'}</td><td><span class="claim-pill ${claim.status.toLowerCase()}">${claim.status}</span></td><td><button class="table-action" data-action="packing-claim" data-claim="${index}">Packing slip</button>${claim.trackingNumber ? `<button class="table-action" data-action="delivered" data-claim="${index}">Mark delivered</button>` : ''}<button class="table-action" data-action="tracking" data-claim="${index}">${claim.trackingNumber ? 'Edit tracking' : 'Add tracking'}</button></td></tr>`; }).join('') : '<tr><td colspan="6" class="muted">No claims are waiting for shipping.</td></tr>'}</tbody></table></div>`; }
 function adminGeneric(tab, outstanding) { return `<div class="generic-admin"><h2>${tab}</h2><p class="muted">This workspace is ready for live Supabase data.</p><div class="stats-row"><div><span>Total outstanding</span><strong>${money(outstanding)}</strong></div><div><span>Store orders</span><strong>04</strong></div><div><span>Blocked users</span><strong>01</strong></div></div><button class="primary-button" data-action="settings">Open settings</button></div>`; }
@@ -413,6 +427,16 @@ document.addEventListener('click', async (event) => { const button = event.targe
   if (action === 'save-live') { saveToLiveSite(); return; }
   if (action === 'confirm-payment') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); payment.status = 'Confirmed'; save(); notify(`Payment from @${payment.username} confirmed.`); render(); }
   if (action === 'reject-payment') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); payment.status = 'Rejected'; save(); notify('Payment proof rejected.'); render(); }
+  if (action === 'delete-payment') {
+    const paymentId = Number(button.dataset.payment);
+    const payment = state.payments.find((entry) => entry.id === paymentId);
+    if (payment && window.confirm(`Delete the payment from @${payment.username}?`)) {
+      state.payments = state.payments.filter((entry) => entry.id !== paymentId);
+      save();
+      render();
+      notify('Payment deleted.');
+    }
+  }
   if (action === 'mark-paid') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Paid'; const linkedClaims = state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)); linkedClaims.forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`${linkedClaims.length ? linkedClaims.length : 'No'} claim${linkedClaims.length === 1 ? '' : 's'} for @${payment.username} marked paid.`); }
   if (action === 'mark-claim-paid') { const claim = state.claims[Number(button.dataset.claim)]; if (claim) { claim.status = 'Paid'; save(); render(); notify(`@${claim.username} marked paid.`); } }
   if (action === 'mark-user-paid') { const username = button.dataset.username.toLowerCase(); state.claims.filter((claim) => claim.username.toLowerCase() === username && claim.status !== 'Supplied').forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`@${button.dataset.username} claims marked paid.`); }
