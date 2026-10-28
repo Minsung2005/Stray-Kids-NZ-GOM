@@ -48,3 +48,5 @@ From Admin → GOs → Manage, organisers can add multiple dropdowns (items) to 
 Dropdowns can also be deleted. Set dropdowns accept a set count and member options; joiners select the members they want and see the number of complete sets still available.
 
 New group orders include a sets-on-hand field. Set-based dropdowns secure at 80% of the configured set count for every member and show a visible `Secured` label on the GO once that threshold is reached.
+
+Admins can adjust an individual joiner's amount owed from the `Who owes me` table. Adjustments are saved and reflected in totals and exports.
