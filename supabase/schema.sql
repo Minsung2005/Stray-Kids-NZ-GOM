@@ -75,6 +75,17 @@ create table public.claims (
   updated_at timestamptz not null default now()
 );
 
+create table public.claim_events (
+  id uuid primary key default gen_random_uuid(),
+  go_id text not null,
+  item_id text not null,
+  instagram_username text not null,
+  selections jsonb not null default '{}'::jsonb,
+  amount numeric(10,2) not null default 0,
+  status text not null default 'Pending',
+  created_at timestamptz not null default now()
+);
+
 create table public.shop_listings (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -182,6 +193,7 @@ alter table public.app_private_state enable row level security;
 alter table public.group_orders enable row level security;
 alter table public.go_items enable row level security;
 alter table public.claims enable row level security;
+alter table public.claim_events enable row level security;
 alter table public.shop_listings enable row level security;
 alter table public.shop_orders enable row level security;
 alter table public.payment_proofs enable row level security;
@@ -203,6 +215,11 @@ create policy "admin manages items" on public.go_items for all using (public.is_
 create policy "public creates claims" on public.claims for insert with check (not exists (select 1 from public.blocked_users b where lower(b.instagram_username) = lower(instagram_username)));
 create policy "admin sees claims" on public.claims for select using (public.is_admin());
 create policy "admin edits claims" on public.claims for update using (public.is_admin()) with check (public.is_admin());
+create policy "public reads claim events" on public.claim_events for select using (true);
+create policy "public creates claim events" on public.claim_events for insert with check (
+  not exists (select 1 from public.blocked_users b where lower(b.instagram_username) = lower(instagram_username))
+);
+create policy "admin manages claim events" on public.claim_events for all using (public.is_admin()) with check (public.is_admin());
 create policy "public sees active shop" on public.shop_listings for select using (active = true or public.is_admin());
 create policy "admin manages shop" on public.shop_listings for all using (public.is_admin()) with check (public.is_admin());
 create policy "public creates shop orders" on public.shop_orders for insert with check (true);

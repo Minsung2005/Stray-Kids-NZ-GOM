@@ -39,6 +39,8 @@ The current admin tools sync their shared state through `app_public_state` and `
 
 Claim selections and usernames are included in the public synced state so every device can show shared set availability and who has claimed each option. After claims change, an organiser should use **Save to live site** in Admin to publish the latest state.
 
+For cross-device claim submission, also run the `claim_events` table and policy definitions in [`supabase/schema.sql`](supabase/schema.sql). This lets joiners submit claims directly to Supabase while keeping claim usernames and selections visible to the public allocation view.
+
 ## GitHub Pages
 
 The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) deploys the repository root to Pages whenever `main` changes. In repository settings, set Pages to **GitHub Actions**. Since this is a static site, hash routes work without server rewrites.

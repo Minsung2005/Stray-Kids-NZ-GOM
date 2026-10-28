@@ -85,6 +85,7 @@ async function saveToLiveSite() {
   const button = document.querySelector('[data-action="save-live"]');
   if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
+    await publishLocalClaims();
     await save();
     notify('Saved to the live site.');
   } catch {
@@ -116,8 +117,44 @@ async function loadCloudState() {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     render();
   }
+  await loadClaimEvents();
   cloudReady = true;
   document.querySelector('.sync')?.classList.add('live');
+}
+async function loadClaimEvents() {
+  if (!supabaseClient) return;
+  const result = await supabaseClient.from('claim_events').select('id,go_id,item_id,instagram_username,selections,amount,status,created_at').order('created_at', { ascending: true });
+  if (result.error) {
+    if (result.error.code !== '42P01') notify(`Claim sync failed: ${result.error.message}`);
+    return;
+  }
+  state.claims = result.data.map((claim) => ({
+    cloudClaimId: claim.id,
+    username: claim.instagram_username,
+    goId: claim.go_id,
+    itemId: claim.item_id,
+    selections: claim.selections || {},
+    amount: Number(claim.amount),
+    status: claim.status,
+    credit: 0,
+    createdAt: claim.created_at
+  }));
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  render();
+}
+async function publishLocalClaims() {
+  if (!supabaseClient || !isAdminUnlocked()) return;
+  const claims = state.claims.filter((claim) => !claim.cloudClaimId);
+  if (!claims.length) return;
+  const result = await supabaseClient.from('claim_events').insert(claims.map((claim) => ({
+    go_id: claim.goId,
+    item_id: claim.itemId,
+    instagram_username: claim.username,
+    selections: claim.selections || {},
+    amount: claim.amount,
+    status: claim.status
+  }))).select('id');
+  if (result.error && result.error.code !== '42P01') throw new Error(`Claim publish failed: ${result.error.message}`);
 }
 const notify = (message) => { toast.textContent = message; toast.classList.add('show'); window.clearTimeout(notify.timeout); notify.timeout = window.setTimeout(() => toast.classList.remove('show'), 2600); };
 const basket = () => JSON.parse(localStorage.getItem('go-manager-basket') || '[]');
@@ -255,7 +292,7 @@ function claimStore() { return JSON.parse(sessionStorage.getItem('go-claim') || 
 function adjustClaim(itemId, option, delta) { const store = claimStore(); const go = goById(route().split('/')[1]); const item = go?.items.find((candidate) => candidate.id === itemId); const maximum = item?.kind === 'set' ? availableOptionStock(item, option) : item?.kind === 'merch' ? Math.max(0, (item.stock || 0) - (item.claimed || 0)) : 10; const key = `${itemId}-${option}`; store[key] = Math.max(0, Math.min(maximum, (store[key] || 0) + delta)); sessionStorage.setItem('go-claim', JSON.stringify(store)); const count = document.querySelector(`[data-count="${CSS.escape(key)}"]`); if (count) count.textContent = store[key]; updateSummary(); }
 function updateSummary() { const summary = document.querySelector('#claim-summary'); if (!summary) return; const values = Object.entries(claimStore()).filter(([, value]) => value > 0); const go = goById(route().split('/')[1]); let total = 0; summary.innerHTML = values.length ? values.map(([key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); total += item.price * value; return `<div class="summary-line"><span>${key.split('-').slice(1).join('-')} × ${value}</span><b>${money(item.price * value)}</b></div>`; }).join('') + `<div class="summary-total"><span>Total</span><b>${money(total)}</b></div>` : '<p class="muted">Your selected items will appear here.</p>'; }
 
-document.addEventListener('click', (event) => { const button = event.target.closest('[data-action]'); if (!button) return; const action = button.dataset.action;
+document.addEventListener('click', async (event) => { const button = event.target.closest('[data-action]'); if (!button) return; const action = button.dataset.action;
   if (action === 'close-modal') { closeModal(); return; }
   if (action === 'menu') { document.querySelector('.main-nav')?.classList.toggle('menu-open'); return; }
   if (action === 'artist') { activeArtist = button.dataset.artist; render(); }
@@ -274,7 +311,7 @@ document.addEventListener('click', (event) => { const button = event.target.clos
   if (action === 'reject-payment') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); payment.status = 'Rejected'; save(); notify('Payment proof rejected.'); render(); }
   if (action === 'mark-paid') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Paid'; const linkedClaims = state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)); linkedClaims.forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`${linkedClaims.length ? linkedClaims.length : 'No'} claim${linkedClaims.length === 1 ? '' : 's'} for @${payment.username} marked paid.`); }
   if (action === 'mark-claim-paid') { const claim = state.claims[Number(button.dataset.claim)]; if (claim) { claim.status = 'Paid'; save(); render(); notify(`@${claim.username} marked paid.`); } }
-  if (action === 'delete-claim') { const index = Number(button.dataset.claim); const claim = state.claims[index]; if (claim && window.confirm(`Delete @${claim.username}'s claim? This will return the reserved stock.`)) { restoreClaimStock(claim); state.claims.splice(index, 1); save(); render(); notify('Claim deleted and stock restored.'); } }
+  if (action === 'delete-claim') { const index = Number(button.dataset.claim); const claim = state.claims[index]; if (claim && window.confirm(`Delete @${claim.username}'s claim? This will return the reserved stock.`)) { restoreClaimStock(claim); if (claim.cloudClaimId && supabaseClient) { const result = await supabaseClient.from('claim_events').delete().eq('id', claim.cloudClaimId); if (result.error) { notify(`Claim delete failed: ${result.error.message}`); return; } } state.claims.splice(index, 1); save(); render(); notify('Claim deleted and stock restored.'); } }
   if (action === 'mark-supplied') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Supplied'; state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)).forEach((claim) => { claim.status = 'Supplied'; }); save(); render(); notify(`${payment.go} marked supplied.`); }
   if (action === 'new-product') openModal('New product', `<p class="eyebrow">SHOP LISTING</p><h2>Add a product</h2><form data-form="product"><label>Product name<input name="name" required placeholder="e.g. Felix lucky draw" /></label><div class="form-row"><label>Category<select name="category"><option>Album</option><option>Photocard</option><option>Merch</option><option>Accessories</option></select></label><label>Price<input name="price" type="number" min="0" step="0.01" required placeholder="14.00" /></label></div><label>Stock<input name="stock" type="number" min="0" step="1" required value="1" /></label><label>Description<textarea name="description" rows="3" placeholder="What is included?"></textarea></label><label class="photo-field">Product photo<input class="photo-input" name="image" type="file" accept="image/*" /><span class="photo-preview">Choose an image to preview it here.</span></label><button class="primary-button" type="submit">Add product ↗</button></form>`);
   if (action === 'edit-product') { const product = state.shop.find((item) => item.id === button.dataset.product); openModal('Edit product', `<p class="eyebrow">SHOP LISTING</p><h2>Edit product</h2><form data-form="product" data-product="${product.id}"><label>Product name<input name="name" required value="${product.name}" /></label><div class="form-row"><label>Category<select name="category"><option ${product.category === 'Album' ? 'selected' : ''}>Album</option><option ${product.category === 'Photocard' ? 'selected' : ''}>Photocard</option><option ${product.category === 'Merch' ? 'selected' : ''}>Merch</option><option ${product.category === 'Accessories' ? 'selected' : ''}>Accessories</select></label><label>Price<input name="price" type="number" min="0" step="0.01" required value="${product.price}" /></label></div><label>Stock<input name="stock" type="number" min="0" step="1" required value="${product.stock}" /></label><label>Description<textarea name="description" rows="3">${product.description}</textarea></label><label class="photo-field">Product photo<input class="photo-input" name="image" type="file" accept="image/*" /><span class="photo-preview">${product.image ? `<img src="${product.image}" alt="Current product photo" />` : 'Choose a new image or keep the current one.'}</span></label><button class="primary-button" type="submit">Save changes ↗</button></form>`); }
@@ -344,7 +381,7 @@ document.addEventListener('submit', async (event) => {
     }
     return;
   }
-  if (form.id === 'claim-form') { const values = claimStore(); if (!Object.values(values).some((value) => value > 0)) { notify('Choose at least one item first.'); return; } const goId = route().split('/')[1]; const go = goById(goId); const username = form.username.value.trim().replace(/^@/, ''); const selections = Object.fromEntries(Object.entries(values).filter(([, value]) => value > 0)); const selectedItems = new Set(); const amount = Object.entries(selections).reduce((sum, [key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); selectedItems.add(item.id); if (item.kind === 'set') { const option = key.slice(`${item.id}-`.length); item.claims[option] = (item.claims[option] || 0) + value; } else item.claimed = (item.claimed || 0) + value; return sum + item.price * value; }, 0); const firstItem = go.items.find((item) => Object.keys(selections).some((key) => key.startsWith(`${item.id}-`))); state.claims.unshift({ username, goId, itemId: firstItem?.id || go.items[0].id, selections, amount, status: 'Pending', credit: 0 }); save(); sessionStorage.setItem('go-manager-username', username.toLowerCase()); sessionStorage.removeItem('go-claim'); notify('Claim submitted. Check My orders for updates.'); window.location.hash = '#my-orders'; return; }
+  if (form.id === 'claim-form') { const values = claimStore(); if (!Object.values(values).some((value) => value > 0)) { notify('Choose at least one item first.'); return; } const goId = route().split('/')[1]; const go = goById(goId); const username = form.username.value.trim().replace(/^@/, ''); const selections = Object.fromEntries(Object.entries(values).filter(([, value]) => value > 0)); const selectedItems = new Set(); const amount = Object.entries(selections).reduce((sum, [key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); selectedItems.add(item.id); if (item.kind === 'set') { const option = key.slice(`${item.id}-`.length); item.claims[option] = (item.claims[option] || 0) + value; } else item.claimed = (item.claimed || 0) + value; return sum + item.price * value; }, 0); const firstItem = go.items.find((item) => Object.keys(selections).some((key) => key.startsWith(`${item.id}-`))); const claim = { username, goId, itemId: firstItem?.id || go.items[0].id, selections, amount, status: 'Pending', credit: 0 }; state.claims.unshift(claim); if (supabaseClient) { const result = await supabaseClient.from('claim_events').insert({ go_id: claim.goId, item_id: claim.itemId, instagram_username: claim.username, selections: claim.selections, amount: claim.amount, status: claim.status }).select('id').single(); if (result.error) { notify(`Claim sync failed: ${result.error.message}`); return; } claim.cloudClaimId = result.data.id; } save(); sessionStorage.setItem('go-manager-username', username.toLowerCase()); sessionStorage.removeItem('go-claim'); notify('Claim submitted. Check My orders for updates.'); window.location.hash = '#my-orders'; return; }
   if (form.id === 'lookup-form') { const username = form.username.value.trim().replace(/^@/, '').toLowerCase(); if (!username) { notify('Enter your Instagram username.'); return; } sessionStorage.setItem('go-manager-username', username); render(); return; }
   const data = new FormData(form);
   if (form.dataset.form === 'store-order') { state.storeOrders.unshift({ id: Date.now(), username: data.get('username').replace(/^@/, ''), vendor: data.get('vendor'), description: data.get('description'), amountOwed: Number(data.get('amountOwed')), status: data.get('status') }); save(); render(); notify('Store order added.'); return; }
@@ -372,6 +409,9 @@ if (supabaseClient) {
         localStorage.setItem(STORE_KEY, JSON.stringify(state));
         render();
       }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'claim_events' }, () => {
+      loadClaimEvents();
     })
     .subscribe();
   loadCloudState();
