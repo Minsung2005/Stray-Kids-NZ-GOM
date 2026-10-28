@@ -17,7 +17,13 @@ const app = document.querySelector('#app');
 const toast = document.querySelector('#toast');
 const STORE_KEY = 'go-manager-demo-v2';
 const ADMIN_PASSWORD = 'Jaeger14';
+const supabaseClient = window.supabase && window.SUPABASE_CONFIG?.url && window.SUPABASE_CONFIG?.anonKey
+  ? window.supabase.createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey)
+  : null;
+let cloudReady = false;
+let cloudSaving = false;
 const isAdminUnlocked = () => sessionStorage.getItem('go-manager-admin') === 'unlocked';
+const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules });
 let state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || DEMO;
 state.storeOrders ||= structuredClone(DEMO.storeOrders);
 state.payments ||= structuredClone(DEMO.payments);
@@ -42,7 +48,55 @@ let expandedItems = new Set(['versions']);
 let adminTab = 'GOs';
 const money = (value) => new Intl.NumberFormat('en-NZ', { style: 'currency', currency: state.settings.currency }).format(value);
 const date = (value) => new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`));
-const save = () => localStorage.setItem(STORE_KEY, JSON.stringify(state));
+const save = () => {
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  if (supabaseClient && cloudReady && isAdminUnlocked()) {
+    cloudSaving = true;
+    Promise.all([
+      supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() }),
+      supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() })
+    ]).then(([publicResult, privateResult]) => {
+      const error = publicResult.error || privateResult.error;
+        cloudSaving = false;
+        if (error) {
+          document.querySelector('.sync')?.classList.remove('live');
+          notify(`Cloud save failed: ${error.message}`);
+        } else {
+          document.querySelector('.sync')?.classList.add('live');
+        }
+      }).catch((error) => {
+        cloudSaving = false;
+        document.querySelector('.sync')?.classList.remove('live');
+        notify(`Cloud save failed: ${error.message}`);
+      });
+  }
+};
+async function loadCloudState() {
+  if (!supabaseClient) return;
+  const publicResult = await supabaseClient.from('app_public_state').select('state').eq('id', 'main').maybeSingle();
+  if (publicResult.error) {
+    notify(`Cloud load failed: ${publicResult.error.message}`);
+    return;
+  }
+  if (isAdminUnlocked()) {
+    const privateResult = await supabaseClient.from('app_private_state').select('state').eq('id', 'main').maybeSingle();
+    if (privateResult.error) {
+      notify(`Private cloud load failed: ${privateResult.error.message}`);
+      return;
+    }
+    if (privateResult.data?.state) {
+      state = privateResult.data.state;
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      render();
+    }
+  } else if (publicResult.data?.state) {
+    state = { ...state, ...publicResult.data.state };
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    render();
+  }
+  cloudReady = true;
+  document.querySelector('.sync')?.classList.add('live');
+}
 const notify = (message) => { toast.textContent = message; toast.classList.add('show'); window.clearTimeout(notify.timeout); notify.timeout = window.setTimeout(() => toast.classList.remove('show'), 2600); };
 const basket = () => JSON.parse(localStorage.getItem('go-manager-basket') || '[]');
 const saveBasket = (items) => localStorage.setItem('go-manager-basket', JSON.stringify(items));
@@ -130,7 +184,7 @@ function myOrdersView() { const claims = state.claims; const shippedClaims = cla
 
 function rulesView() { return shell(`<div class="container rules-page">${pageHeading('PLEASE READ BEFORE CLAIMING', 'House rules', 'A little clarity keeps every group order smooth.')}${state.rules.split('\n').map((line) => line.startsWith('# ') ? `<h2>${line.slice(2)}</h2>` : line.startsWith('**') ? `<h3>${line.replaceAll('**', '')}</h3>` : line ? `<p>${line}</p>` : '').join('')}<div class="note-banner"><span>✦</span><div><strong>Still unsure?</strong><p>Send a DM to <b>@blbabe_05</b> before submitting a claim.</p></div></div></div>`, 'rules'); }
 
-function adminLoginView() { return shell(`<div class="container narrow admin-login-page"><div class="lookup-card"><div class="lookup-icon">⌁</div><p class="eyebrow">PRIVATE WORKSPACE</p><h2>Admin mode</h2><p>Enter the organiser password to manage GOs, products, payments and shipping.</p><form id="admin-login-form"><label>Password<input name="password" type="password" autocomplete="current-password" required placeholder="Enter password" /></label><button class="primary-button" type="submit">Unlock admin mode <span>↗</span></button></form></div></div>`, 'admin'); }
+function adminLoginView() { return shell(`<div class="container narrow admin-login-page"><div class="lookup-card"><div class="lookup-icon">⌁</div><p class="eyebrow">PRIVATE WORKSPACE</p><h2>Admin mode</h2><p>${supabaseClient ? 'Sign in with the organiser account connected to Supabase.' : 'Enter the organiser password to manage GOs, products, payments and shipping.'}</p><form id="admin-login-form">${supabaseClient ? '<label>Email<input name="email" type="email" autocomplete="username" required placeholder="you@example.com" /></label>' : ''}<label>Password<input name="password" type="password" autocomplete="current-password" required placeholder="Enter password" /></label><button class="primary-button" type="submit">Unlock admin mode <span>↗</span></button></form></div></div>`, 'admin'); }
 function adminView() { const outstanding = state.claims.reduce((sum, claim) => sum + (claim.status === 'Paid' ? 0 : claim.amount), 0); const tabs = ['GOs', 'Shop', 'Store orders', 'Payments', 'Shipping']; return shell(`<div class="container admin-page"><div class="admin-heading"><div>${pageHeading('ORGANISER CONSOLE', 'Admin dashboard', 'A practical view of the work behind the fan-facing page.')}</div><span class="admin-badge">ADMIN MODE</span></div><div class="admin-tabs">${tabs.map((tab) => `<button type="button" class="admin-tab ${adminTab === tab ? 'active' : ''}" data-action="admin-tab" data-tab="${tab}">${tab}</button>`).join('')}</div>${adminTab === 'GOs' ? adminGos() : adminTab === 'Shop' ? adminShop() : adminTab === 'Store orders' ? adminStoreOrders() : adminTab === 'Payments' ? adminPayments() : adminTab === 'Shipping' ? adminShipping() : adminGeneric(adminTab, outstanding)}</div>`, 'admin'); }
 function adminGos() { const metrics = financeMetrics(); return `<div class="admin-toolbar"><div><h2>Group orders</h2><p class="muted">${state.orders.filter((go) => go.status === 'open').length} active · ${state.orders.filter((go) => go.status === 'closed').length} closed</p></div><button class="primary-button" data-action="new-go">+ New group order</button></div><div class="admin-go-list">${state.orders.map((go) => `<article class="admin-go-row"><div class="admin-go-mark">${go.artist.slice(0, 2).toUpperCase()}</div><div><strong>${go.name}</strong><span>${go.artist} · ${go.items.length} items · ${go.setsOnHand || 0} sets on hand${securedSetsForGo(go) ? ` · ${securedSetsForGo(go)} secured` : ''} · closes ${date(go.deadline)}</span></div><span class="open-pill ${go.status === 'closed' ? 'closed' : ''}">● ${go.status}</span><button class="secondary-button" data-action="manage-go" data-go="${go.id}">Manage ↗</button></article>`).join('')}</div><div class="enhancement-grid"><article><span>◎</span><strong>Who owes me</strong><b>${money(metrics.outstanding)}</b><p>${metrics.unpaidClaims} unpaid claim${metrics.unpaidClaims === 1 ? '' : 's'}</p><button data-action="reminders">Copy reminder messages</button></article><article><span>↗</span><strong>Profit / cost tracker</strong><b>${money(metrics.margin)}</b><p>${money(metrics.projectedValue)} projected order value</p><button data-action="profit">Open tracker</button></article><article><span>▣</span><strong>Exports</strong><b>${metrics.exportCount} ready</b><p>Vendor sheet · roster · CSV</p><button data-action="export">Export this GO</button></article></div>${owedSpreadsheet()}</div>`; }
 function owedRows() { return state.claims.map((claim, index) => { const go = goById(claim.goId); const payment = state.payments.find((entry) => entry.username === claim.username && (!go || entry.go === go.name)); const paid = claim.status === 'Paid' || claim.status === 'Supplied' || payment?.status === 'Paid' || payment?.status === 'Supplied'; return { index, username: claim.username, go: go?.name || 'Unknown GO', amount: claim.amount, status: paid ? 'Paid' : 'Unpaid' }; }); }
@@ -197,7 +251,25 @@ document.addEventListener('click', (event) => { const button = event.target.clos
 document.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.target;
-  if (form.id === 'admin-login-form') { if (form.password.value === ADMIN_PASSWORD) { sessionStorage.setItem('go-manager-admin', 'unlocked'); render(); notify('Admin mode unlocked.'); } else { form.password.value = ''; form.password.focus(); notify('Incorrect admin password.'); } return; }
+  if (form.id === 'admin-login-form') {
+    if (supabaseClient) {
+      const { error } = await supabaseClient.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value });
+      if (error) { notify(`Admin sign-in failed: ${error.message}`); return; }
+      sessionStorage.setItem('go-manager-admin', 'unlocked');
+      render();
+      await loadCloudState();
+      notify('Admin mode unlocked.');
+    } else if (form.password.value === ADMIN_PASSWORD) {
+      sessionStorage.setItem('go-manager-admin', 'unlocked');
+      render();
+      notify('Admin mode unlocked.');
+    } else {
+      form.password.value = '';
+      form.password.focus();
+      notify('Incorrect admin password.');
+    }
+    return;
+  }
   if (form.id === 'claim-form') { const values = claimStore(); if (!Object.values(values).some((value) => value > 0)) { notify('Choose at least one item first.'); return; } const goId = route().split('/')[1]; const go = goById(goId); const selections = Object.fromEntries(Object.entries(values).filter(([, value]) => value > 0)); const selectedItems = new Set(); const setUnits = new Map(); const amount = Object.entries(selections).reduce((sum, [key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); selectedItems.add(item.id); if (item.kind === 'set') { const option = key.slice(`${item.id}-`.length); item.claims[option] = (item.claims[option] || 0) + value; setUnits.set(item.id, Math.max(setUnits.get(item.id) || 0, value)); } else item.claimed = (item.claimed || 0) + value; return sum + item.price * value; }, 0); selectedItems.forEach((itemId) => { const item = go.items.find((candidate) => candidate.id === itemId); if (item.kind === 'set') item.claimedSets = (item.claimedSets || 0) + (setUnits.get(itemId) || 0); }); const firstItem = go.items.find((item) => Object.keys(selections).some((key) => key.startsWith(`${item.id}-`))); state.claims.unshift({ username: form.username.value.replace(/^@/, ''), goId, itemId: firstItem?.id || go.items[0].id, selections, amount, status: 'Pending', credit: 0 }); save(); sessionStorage.removeItem('go-claim'); notify('Claim submitted. Check My orders for updates.'); window.location.hash = '#my-orders'; return; }
   if (form.id === 'lookup-form') { notify(`Welcome, @${form.username.value.replace(/^@/, '')}.`); return; }
   const data = new FormData(form);
@@ -217,5 +289,16 @@ document.addEventListener('submit', async (event) => {
 });
 
 window.addEventListener('hashchange', render);
-if (window.supabase && window.SUPABASE_CONFIG?.url && window.SUPABASE_CONFIG?.anonKey) { const client = window.supabase.createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey); client.channel('go-manager-sync').on('postgres_changes', { event: '*', schema: 'public' }, () => { document.querySelector('.sync')?.classList.add('live'); }).subscribe(); }
 render();
+if (supabaseClient) {
+  supabaseClient.channel('go-manager-sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_public_state' }, (payload) => {
+      if (!cloudSaving && payload.new?.state) {
+        state = { ...state, ...payload.new.state };
+        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        render();
+      }
+    })
+    .subscribe();
+  loadCloudState();
+}

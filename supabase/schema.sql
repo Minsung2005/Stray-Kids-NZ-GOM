@@ -4,6 +4,18 @@
 
 create extension if not exists pgcrypto;
 
+create table public.app_public_state (
+  id text primary key check (id = 'main'),
+  state jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table public.app_private_state (
+  id text primary key check (id = 'main'),
+  state jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 create table public.settings (
   id uuid primary key default gen_random_uuid(),
   organiser_name text not null default 'GO Manager',
@@ -158,6 +170,8 @@ $$;
 -- alter database postgres set app.admin_email = 'admin@example.com';
 
 alter table public.settings enable row level security;
+alter table public.app_public_state enable row level security;
+alter table public.app_private_state enable row level security;
 alter table public.group_orders enable row level security;
 alter table public.go_items enable row level security;
 alter table public.claims enable row level security;
@@ -172,6 +186,9 @@ alter table public.rules enable row level security;
 alter table public.claim_edit_log enable row level security;
 
 create policy "public reads open orders" on public.group_orders for select using (status = 'open' or public.is_admin());
+create policy "public reads app state" on public.app_public_state for select using (true);
+create policy "admin manages public app state" on public.app_public_state for all using (public.is_admin()) with check (public.is_admin());
+create policy "admin manages private app state" on public.app_private_state for all using (public.is_admin()) with check (public.is_admin());
 create policy "public reads open items" on public.go_items for select using (exists (select 1 from public.group_orders g where g.id = group_order_id and (g.status = 'open' or public.is_admin())));
 create policy "admin manages orders" on public.group_orders for all using (public.is_admin()) with check (public.is_admin());
 create policy "admin manages items" on public.go_items for all using (public.is_admin()) with check (public.is_admin());
@@ -197,3 +214,5 @@ create policy "admin writes edit log" on public.claim_edit_log for insert with c
 
 insert into public.settings (organiser_name, instagram_handle) values ('GO Manager', '@go.manager') on conflict do nothing;
 insert into public.rules (id, markdown) values (true, '# House rules') on conflict do nothing;
+alter database postgres
+set app.admin_email = 'shylajwalton@gmail.com';

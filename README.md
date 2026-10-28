@@ -35,6 +35,8 @@ npm test
 
 The app remains usable in demo mode when the config is empty. When configured, the Supabase client subscribes to Postgres changes and the header realtime indicator becomes live. Production writes should be connected to the typed table helpers before enabling the admin tools for real users.
 
+The current admin tools sync their shared state through `app_public_state` and `app_private_state`. After creating the base schema, run the matching table and policy definitions from [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. Admin login uses the Supabase Auth email and password; local demo password login is used only when Supabase is not configured.
+
 ## GitHub Pages
 
 The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) deploys the repository root to Pages whenever `main` changes. In repository settings, set Pages to **GitHub Actions**. Since this is a static site, hash routes work without server rewrites.
