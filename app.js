@@ -67,7 +67,10 @@ async function saveUserAccount(username, account) {
     password_salt: account.salt,
     created_at: account.createdAt
   });
-  if (result.error) throw new Error(`Account save failed: ${result.error.message}`);
+  if (result.error) {
+    if (result.error.code === '42P01') return;
+    throw new Error(`Account save failed: ${result.error.message}`);
+  }
 }
 let activeArtist = 'All';
 let expandedItems = new Set(['versions']);
@@ -458,7 +461,7 @@ document.addEventListener('submit', async (event) => {
   }
   if (form.id === 'claim-form') { const values = claimStore(); if (!Object.values(values).some((value) => value > 0)) { notify('Choose at least one item first.'); return; } const goId = route().split('/')[1]; const go = goById(goId); const username = form.username.value.trim().replace(/^@/, ''); const selections = Object.fromEntries(Object.entries(values).filter(([, value]) => value > 0)); const selectedItems = new Set(); const amount = Object.entries(selections).reduce((sum, [key, value]) => { const item = go.items.find((candidate) => key.startsWith(`${candidate.id}-`)); selectedItems.add(item.id); if (item.kind === 'set') { const option = key.slice(`${item.id}-`.length); item.claims[option] = (item.claims[option] || 0) + value; } else item.claimed = (item.claimed || 0) + value; return sum + item.price * value; }, 0); const firstItem = go.items.find((item) => Object.keys(selections).some((key) => key.startsWith(`${item.id}-`))); const claim = { username, goId, itemId: firstItem?.id || go.items[0].id, selections, amount, status: 'Pending', credit: 0 }; state.claims.unshift(claim); if (supabaseClient) { const result = await supabaseClient.from('claim_events').insert({ go_id: claim.goId, item_id: claim.itemId, instagram_username: claim.username, selections: claim.selections, amount: claim.amount, status: claim.status }).select('id').single(); if (result.error) { notify(`Claim sync failed: ${result.error.message}`); return; } claim.cloudClaimId = result.data.id; } save(); sessionStorage.setItem('go-manager-username', username.toLowerCase()); sessionStorage.removeItem('go-claim'); notify('Claim submitted. Check My orders for updates.'); window.location.hash = '#my-orders'; return; }
   if (form.id === 'lookup-form') {
-    await userAccountsReady;
+    await Promise.race([userAccountsReady.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 3000))]);
     const username = form.elements.namedItem('username').value.trim().replace(/^@/, '').toLowerCase();
     const password = form.elements.namedItem('password').value;
     const createAccount = form.elements.namedItem('createAccount').checked;
