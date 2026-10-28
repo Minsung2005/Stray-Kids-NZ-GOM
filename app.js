@@ -52,7 +52,7 @@ const save = () => {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if (supabaseClient && cloudReady && isAdminUnlocked()) {
     cloudSaving = true;
-    Promise.all([
+    return Promise.all([
       supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() }),
       supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() })
     ]).then(([publicResult, privateResult]) => {
@@ -68,9 +68,31 @@ const save = () => {
         cloudSaving = false;
         document.querySelector('.sync')?.classList.remove('live');
         notify(`Cloud save failed: ${error.message}`);
+        throw error;
       });
   }
+  return Promise.resolve();
 };
+async function saveToLiveSite() {
+  if (!supabaseClient) {
+    notify('Supabase is not configured.');
+    return;
+  }
+  if (!isAdminUnlocked() || !cloudReady) {
+    notify('Sign in to Supabase before saving to the live site.');
+    return;
+  }
+  const button = document.querySelector('[data-action="save-live"]');
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+  try {
+    await save();
+    notify('Saved to the live site.');
+  } catch {
+    // save() already reports the database error.
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Save to live site'; }
+  }
+}
 async function loadCloudState() {
   if (!supabaseClient) return;
   const publicResult = await supabaseClient.from('app_public_state').select('state').eq('id', 'main').maybeSingle();
@@ -185,7 +207,7 @@ function myOrdersView() { const claims = state.claims; const shippedClaims = cla
 function rulesView() { return shell(`<div class="container rules-page">${pageHeading('PLEASE READ BEFORE CLAIMING', 'House rules', 'A little clarity keeps every group order smooth.')}${state.rules.split('\n').map((line) => line.startsWith('# ') ? `<h2>${line.slice(2)}</h2>` : line.startsWith('**') ? `<h3>${line.replaceAll('**', '')}</h3>` : line ? `<p>${line}</p>` : '').join('')}<div class="note-banner"><span>✦</span><div><strong>Still unsure?</strong><p>Send a DM to <b>@blbabe_05</b> before submitting a claim.</p></div></div></div>`, 'rules'); }
 
 function adminLoginView() { return shell(`<div class="container narrow admin-login-page"><div class="lookup-card"><div class="lookup-icon">⌁</div><p class="eyebrow">PRIVATE WORKSPACE</p><h2>Admin mode</h2><p>${supabaseClient ? 'Sign in with the organiser account connected to Supabase.' : 'Enter the organiser password to manage GOs, products, payments and shipping.'}</p><form id="admin-login-form">${supabaseClient ? '<label>Email<input name="email" type="email" autocomplete="username" required placeholder="you@example.com" /></label>' : ''}<label>Password<input name="password" type="password" autocomplete="current-password" required placeholder="Enter password" /></label><button class="primary-button" type="submit">Unlock admin mode <span>↗</span></button></form></div></div>`, 'admin'); }
-function adminView() { const outstanding = state.claims.reduce((sum, claim) => sum + (claim.status === 'Paid' ? 0 : claim.amount), 0); const tabs = ['GOs', 'Shop', 'Store orders', 'Payments', 'Shipping']; return shell(`<div class="container admin-page"><div class="admin-heading"><div>${pageHeading('ORGANISER CONSOLE', 'Admin dashboard', 'A practical view of the work behind the fan-facing page.')}</div><span class="admin-badge">ADMIN MODE</span></div><div class="admin-tabs">${tabs.map((tab) => `<button type="button" class="admin-tab ${adminTab === tab ? 'active' : ''}" data-action="admin-tab" data-tab="${tab}">${tab}</button>`).join('')}</div>${adminTab === 'GOs' ? adminGos() : adminTab === 'Shop' ? adminShop() : adminTab === 'Store orders' ? adminStoreOrders() : adminTab === 'Payments' ? adminPayments() : adminTab === 'Shipping' ? adminShipping() : adminGeneric(adminTab, outstanding)}</div>`, 'admin'); }
+function adminView() { const outstanding = state.claims.reduce((sum, claim) => sum + (claim.status === 'Paid' ? 0 : claim.amount), 0); const tabs = ['GOs', 'Shop', 'Store orders', 'Payments', 'Shipping']; return shell(`<div class="container admin-page"><div class="admin-heading"><div>${pageHeading('ORGANISER CONSOLE', 'Admin dashboard', 'A practical view of the work behind the fan-facing page.')}</div><div class="admin-heading-actions"><button class="primary-button" data-action="save-live">Save to live site</button><span class="admin-badge">ADMIN MODE</span></div></div><div class="admin-tabs">${tabs.map((tab) => `<button type="button" class="admin-tab ${adminTab === tab ? 'active' : ''}" data-action="admin-tab" data-tab="${tab}">${tab}</button>`).join('')}</div>${adminTab === 'GOs' ? adminGos() : adminTab === 'Shop' ? adminShop() : adminTab === 'Store orders' ? adminStoreOrders() : adminTab === 'Payments' ? adminPayments() : adminTab === 'Shipping' ? adminShipping() : adminGeneric(adminTab, outstanding)}</div>`, 'admin'); }
 function adminGos() { const metrics = financeMetrics(); return `<div class="admin-toolbar"><div><h2>Group orders</h2><p class="muted">${state.orders.filter((go) => go.status === 'open').length} active · ${state.orders.filter((go) => go.status === 'closed').length} closed</p></div><button class="primary-button" data-action="new-go">+ New group order</button></div><div class="admin-go-list">${state.orders.map((go) => `<article class="admin-go-row"><div class="admin-go-mark">${go.artist.slice(0, 2).toUpperCase()}</div><div><strong>${go.name}</strong><span>${go.artist} · ${go.items.length} items · ${go.setsOnHand || 0} sets on hand${securedSetsForGo(go) ? ` · ${securedSetsForGo(go)} secured` : ''} · closes ${date(go.deadline)}</span></div><span class="open-pill ${go.status === 'closed' ? 'closed' : ''}">● ${go.status}</span><button class="secondary-button" data-action="manage-go" data-go="${go.id}">Manage ↗</button></article>`).join('')}</div><div class="enhancement-grid"><article><span>◎</span><strong>Who owes me</strong><b>${money(metrics.outstanding)}</b><p>${metrics.unpaidClaims} unpaid claim${metrics.unpaidClaims === 1 ? '' : 's'}</p><button data-action="reminders">Copy reminder messages</button></article><article><span>↗</span><strong>Profit / cost tracker</strong><b>${money(metrics.margin)}</b><p>${money(metrics.projectedValue)} projected order value</p><button data-action="profit">Open tracker</button></article><article><span>▣</span><strong>Exports</strong><b>${metrics.exportCount} ready</b><p>Vendor sheet · roster · CSV</p><button data-action="export">Export this GO</button></article></div>${owedSpreadsheet()}</div>`; }
 function owedRows() { return state.claims.map((claim, index) => { const go = goById(claim.goId); const payment = state.payments.find((entry) => entry.username === claim.username && (!go || entry.go === go.name)); const paid = claim.status === 'Paid' || claim.status === 'Supplied' || payment?.status === 'Paid' || payment?.status === 'Supplied'; return { index, username: claim.username, go: go?.name || 'Unknown GO', amount: claim.amount, status: paid ? 'Paid' : 'Unpaid' }; }); }
 function financeMetrics() { const rows = owedRows(); const projectedValue = state.orders.reduce((sum, go) => sum + go.items.reduce((itemSum, item) => { const claimed = item.kind === 'set' ? Object.values(item.claims || {}).reduce((total, count) => total + count, 0) : item.claimed || 0; return itemSum + item.price * claimed; }, 0), 0); const outstanding = rows.filter((row) => row.status === 'Unpaid').reduce((sum, row) => sum + row.amount, 0); const paid = rows.filter((row) => row.status === 'Paid').reduce((sum, row) => sum + row.amount, 0); const loggedCosts = state.storeOrders.reduce((sum, order) => sum + order.amountOwed, 0); return { outstanding, paid, projectedValue, loggedCosts, margin: projectedValue - loggedCosts, unpaidClaims: rows.filter((row) => row.status === 'Unpaid').length, exportCount: state.orders.length * 3 }; }
@@ -216,6 +238,7 @@ document.addEventListener('click', (event) => { const button = event.target.clos
   if (action === 'pay') openModal('Pay a balance', `<p class="eyebrow">PAYMENT PROOF</p><h2>Submit a payment</h2><p class="modal-copy">One transfer ID can cover several GOs.</p><form data-form="payment"><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="42.00" /></label><label>Payment method<select name="method"><option>Bank transfer</option><option>PayPal</option></select></label><label>Transaction ID<input name="reference" required placeholder="Your bank reference" /></label><label>Screenshot<input name="screenshot" type="file" accept="image/*" /></label><button class="primary-button" type="submit">Submit proof ↗</button></form>`);
   if (action === 'shipping') openModal('Request shipping', `<p class="eyebrow">SHIPMENT REQUEST</p><h2>Where should it go?</h2><p class="modal-copy">Demo claims are not Ready yet, but you can preview the request form.</p><form data-form="shipping"><div class="form-row"><label>Name<input name="name" required /></label><label>Postal code<input name="postcode" required /></label></div><label>Address<input name="address" required /></label><div class="form-row"><label>City<input name="city" required /></label><label>Method<select name="method"><option>Stamped · $4.50</option><option>Tracked · $8.50</option></select></label></div><label><input name="combine" type="checkbox" checked /> Combine GO claims and shop orders</label><button class="primary-button" type="submit">Request shipping ↗</button></form>`);
   if (action === 'admin-tab') { adminTab = button.dataset.tab; render(); return; }
+  if (action === 'save-live') { saveToLiveSite(); return; }
   if (action === 'confirm-payment') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); payment.status = 'Confirmed'; save(); notify(`Payment from @${payment.username} confirmed.`); render(); }
   if (action === 'reject-payment') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); payment.status = 'Rejected'; save(); notify('Payment proof rejected.'); render(); }
   if (action === 'mark-paid') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Paid'; const linkedClaims = state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)); linkedClaims.forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`${linkedClaims.length ? linkedClaims.length : 'No'} claim${linkedClaims.length === 1 ? '' : 's'} for @${payment.username} marked paid.`); }
