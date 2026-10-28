@@ -170,7 +170,7 @@ function setRecords(item) {
   const setCount = item.setCount ?? item.totalSlots ?? 0;
   const requiredMembers = Math.ceil(item.options.length * (item.secureThreshold ?? 0.8));
   const holders = Object.fromEntries(item.options.map((member) => [member, []]));
-  state.claims.forEach((claim) => {
+  [...state.claims].reverse().forEach((claim) => {
     Object.entries(claim.selections || {}).forEach(([key, quantity]) => {
       if (!key.startsWith(`${item.id}-`)) return;
       const member = key.slice(`${item.id}-`.length);
