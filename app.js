@@ -74,19 +74,30 @@ function itemProgress(item) {
 function availableSets(item) {
   if (item.kind !== 'set') return 0;
   const setCount = item.setCount ?? item.totalSlots ?? 0;
-  const highestClaim = Math.max(0, ...Object.values(item.claims || {}));
-  return Math.max(0, setCount - highestClaim);
+  return Math.max(0, setCount - securedSetCount(item));
+}
+function setRecords(item) {
+  if (item.kind !== 'set' || !item.options.length) return [];
+  const setCount = item.setCount ?? item.totalSlots ?? 0;
+  const requiredMembers = Math.ceil(item.options.length * (item.secureThreshold ?? 0.8));
+  const holders = Object.fromEntries(item.options.map((member) => [member, []]));
+  state.claims.forEach((claim) => {
+    Object.entries(claim.selections || {}).forEach(([key, quantity]) => {
+      if (!key.startsWith(`${item.id}-`)) return;
+      const member = key.slice(`${item.id}-`.length);
+      if (!holders[member]) return;
+      for (let count = 0; count < quantity; count += 1) holders[member].push(`@${claim.username}`);
+    });
+  });
+  return Array.from({ length: setCount }, (_, index) => {
+    const setNumber = index + 1;
+    const members = Object.fromEntries(item.options.map((member) => [member, holders[member][index] || 'Still available']));
+    const filledMembers = Object.values(members).filter((holder) => holder !== 'Still available').length;
+    return { number: setNumber, members, secured: filledMembers >= requiredMembers };
+  });
 }
 function securedSetCount(item) {
-  if (item.kind !== 'set' || !item.options.length) return 0;
-  const requiredMembers = Math.ceil(item.options.length * (item.secureThreshold ?? 0.8));
-  const maxSets = Math.max(0, ...item.options.map((member) => item.claims?.[member] || 0));
-  let secured = 0;
-  for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
-    const filledMembers = item.options.filter((member) => (item.claims?.[member] || 0) >= setNumber).length;
-    if (filledMembers >= requiredMembers) secured += 1;
-  }
-  return secured;
+  return setRecords(item).filter((record) => record.secured).length;
 }
 function setSecured(item, member) { return (item.claims?.[member] || 0) >= Math.ceil(item.totalSlots * (item.secureThreshold ?? 0.8)); }
 function itemIsSecured(item) { return securedSetCount(item) > 0; }
@@ -98,7 +109,8 @@ function itemRow(go, item) {
 function claimPicker(go, item) {
   if (item.kind === 'merch') return `<div class="merch-picker"><div><strong>How many?</strong><p>Stock is limited to ${item.stock} pieces.</p></div><div class="stepper"><button data-action="adjust-claim" data-item="${item.id}" data-option="Standard set" data-delta="-1">−</button><b data-count="${item.id}-Standard set">0</b><button data-action="adjust-claim" data-item="${item.id}" data-option="Standard set" data-delta="1">+</button></div></div>`;
   if (item.kind === 'batch') return `<div class="batch-picker"><div><strong>Pick any member</strong><p>Member choice only affects sorting priority. Repeats are allowed.</p></div><select data-batch-select="${item.id}">${item.options.map((option) => `<option>${option}</option>`).join('')}</select><div class="stepper"><button data-action="adjust-claim" data-item="${item.id}" data-option="Any member" data-delta="-1">−</button><b data-count="${item.id}-Any member">0</b><button data-action="adjust-claim" data-item="${item.id}" data-option="Any member" data-delta="1">+</button></div></div>`;
-  return `<div><div class="set-availability"><strong>${availableSets(item)} complete set${availableSets(item) === 1 ? '' : 's'} available</strong><span>Select the members you want in your set.</span></div><div class="member-grid">${item.options.map((member) => { const claimed = item.claims[member] || 0; const secured = setSecured(item, member); const remaining = Math.max(0, (item.setCount ?? item.totalSlots) - claimed); return `<div class="member-tile ${secured ? 'secured' : ''}"><div class="member-name"><strong>${member}</strong><span>${remaining} available</span></div><div class="stepper"><button data-action="adjust-claim" data-item="${item.id}" data-option="${member}" data-delta="-1">−</button><b data-count="${item.id}-${member}">0</b><button data-action="adjust-claim" data-item="${item.id}" data-option="${member}" data-delta="1" ${remaining < 1 ? 'disabled' : ''}>+</button></div></div>`; }).join('')}<div class="member-tile ot-tile"><div class="member-name"><strong>All members</strong><span>Full set · ${money(item.price * item.options.length)}</span></div><button class="ot-button" data-action="ot-claim" data-item="${item.id}">Add full set</button></div></div></div>`;
+  const records = setRecords(item);
+  return `<div><div class="set-availability"><strong>${availableSets(item)} set${availableSets(item) === 1 ? '' : 's'} still available</strong><span>Select the members you want in your set.</span></div><div class="set-records">${records.map((record) => `<div class="set-record ${record.secured ? 'secured' : ''}"><strong>Set ${record.number} · ${record.secured ? 'Secured' : 'Still available'}</strong><div>${Object.entries(record.members).map(([member, holder]) => `<span>${member}: ${holder}</span>`).join('')}</div></div>`).join('')}</div><div class="member-grid">${item.options.map((member) => { const claimed = item.claims[member] || 0; const secured = setSecured(item, member); const remaining = Math.max(0, (item.setCount ?? item.totalSlots) - claimed); return `<div class="member-tile ${secured ? 'secured' : ''}"><div class="member-name"><strong>${member}</strong><span>${remaining} available</span></div><div class="stepper"><button data-action="adjust-claim" data-item="${item.id}" data-option="${member}" data-delta="-1">−</button><b data-count="${item.id}-${member}">0</b><button data-action="adjust-claim" data-item="${item.id}" data-option="${member}" data-delta="1" ${remaining < 1 ? 'disabled' : ''}>+</button></div></div>`; }).join('')}<div class="member-tile ot-tile"><div class="member-name"><strong>All members</strong><span>Full set · ${money(item.price * item.options.length)}</span></div><button class="ot-button" data-action="ot-claim" data-item="${item.id}">Add full set</button></div></div></div>`;
 }
 function detailView(id) {
   const go = goById(id); if (!go) return notFound();

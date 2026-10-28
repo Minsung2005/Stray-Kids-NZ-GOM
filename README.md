@@ -50,3 +50,5 @@ Dropdowns can also be deleted. Set dropdowns accept a set count and member optio
 New group orders include a sets-on-hand field. Set-based dropdowns secure at 80% of the configured set count for every member and show a visible `Secured` label on the GO once that threshold is reached.
 
 Admins can adjust an individual joiner's amount owed from the `Who owes me` table. Adjustments are saved and reflected in totals and exports.
+
+Set dropdowns show each set's member allocation, including the joiner's username for filled members and `Still available` for unfilled members. A set is secured once 80% of its member choices are filled.
