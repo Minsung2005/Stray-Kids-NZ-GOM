@@ -51,6 +51,8 @@ New group orders include a sets-on-hand field. Set-based dropdowns secure at 80%
 
 Admins can adjust an individual joiner's amount owed from the `Who owes me` table. Adjustments are saved and reflected in totals and exports.
 
+In Admin → Payments, use `Mark paid` on a payment proof to mark the matching joiner's claims as paid. Those claims then leave the outstanding `Who owes me` list while remaining in payment history.
+
 Set dropdowns show each set's member allocation, including the joiner's username for filled members and `Still available` for unfilled members. A set is secured once 80% of its member choices are filled.
 
 When a claim is submitted, each ordered set consumes one available set slot. This applies to both an OT8/full-set claim and an individual member claim, and the remaining stock is shown in the dropdown.
