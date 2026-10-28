@@ -186,7 +186,12 @@ function setRecords(item) {
   });
 }
 function securedSetCount(item) {
-  return setRecords(item).filter((record) => record.secured).length;
+  if (item.kind !== 'set' || !item.options.length) return 0;
+  const setCount = item.setCount ?? item.totalSlots ?? 0;
+  const requiredMembers = Math.ceil(item.options.length * (item.secureThreshold ?? 0.8));
+  return Array.from({ length: setCount }, (_, index) => index + 1)
+    .filter((setNumber) => item.options.filter((member) => (item.claims?.[member] || 0) >= setNumber).length >= requiredMembers)
+    .length;
 }
 function setSecured(item, member) { return (item.claims?.[member] || 0) >= Math.ceil(item.totalSlots * (item.secureThreshold ?? 0.8)); }
 function itemIsSecured(item) { return securedSetCount(item) > 0; }
