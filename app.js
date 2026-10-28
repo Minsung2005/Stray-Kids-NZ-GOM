@@ -49,7 +49,7 @@ async function loadUserAccounts() {
   if (!supabaseClient) return;
   const result = await supabaseClient.from('user_accounts').select('username,password_hash,password_salt,created_at');
   if (result.error) {
-    if (result.error.code !== '42P01') notify(`Account sync failed: ${result.error.message}`);
+    if (!['42P01', 'PGRST205'].includes(result.error.code)) notify(`Account sync failed: ${result.error.message}`);
     return;
   }
   state.userAccounts = Object.fromEntries(result.data.map((account) => [account.username, {
@@ -68,7 +68,7 @@ async function saveUserAccount(username, account) {
     created_at: account.createdAt
   });
   if (result.error) {
-    if (result.error.code === '42P01') return;
+    if (['42P01', 'PGRST205'].includes(result.error.code)) return;
     throw new Error(`Account save failed: ${result.error.message}`);
   }
 }
