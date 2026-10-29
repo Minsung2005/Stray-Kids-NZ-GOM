@@ -339,7 +339,7 @@ function setRecords(item) {
       if (!key.startsWith(`${item.id}-`)) return;
       const member = key.slice(`${item.id}-`.length);
       if (!holders[member]) return;
-      for (let count = 0; count < quantity; count += 1) holders[member].push(['Paid', 'Supplied'].includes(claim.status) ? 'Claimed' : `@${claim.username}`);
+      for (let count = 0; count < quantity; count += 1) holders[member].push(['Paid', 'Supplied'].includes(claim.status) && !isAdminUnlocked() ? 'Claimed' : `@${claim.username}`);
     });
   });
   return Array.from({ length: setCount }, (_, index) => {
