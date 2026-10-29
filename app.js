@@ -109,19 +109,17 @@ function randomSalt() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-const save = () => {
+const save = ({ publicOnly = false } = {}) => {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if (supabaseClient && cloudReady && isAdminUnlocked()) {
     cloudSaving = true;
-    return Promise.all([
-      supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() }),
-      supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() })
-    ]).then(([publicResult, privateResult]) => {
+    const writes = [
+      supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() })
+    ];
+    if (!publicOnly) writes.push(supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() }));
+    return Promise.all(writes).then((results) => {
       cloudSaving = false;
-      const failures = [
-        publicResult.error && `public state: ${publicResult.error.message}`,
-        privateResult.error && `private state: ${privateResult.error.message}`
-      ].filter(Boolean);
+      const failures = results.map((result, index) => result.error && `${index === 0 ? 'public' : 'private'} state: ${result.error.message}`).filter(Boolean);
       if (failures.length) {
         document.querySelector('.sync')?.classList.remove('live');
         notify(`Cloud save failed — ${failures.join('; ')}`);
@@ -449,9 +447,9 @@ document.addEventListener('click', async (event) => { const button = event.targe
       notify('Payment deleted.');
     }
   }
-  if (action === 'mark-paid') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Paid'; const linkedClaims = state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)); linkedClaims.forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`${linkedClaims.length ? linkedClaims.length : 'No'} claim${linkedClaims.length === 1 ? '' : 's'} for @${payment.username} marked paid.`); }
-  if (action === 'mark-claim-paid') { const claim = state.claims[Number(button.dataset.claim)]; if (claim) { claim.status = 'Paid'; save(); render(); notify(`@${claim.username} marked paid.`); } }
-  if (action === 'mark-user-paid') { const username = button.dataset.username.toLowerCase(); state.claims.filter((claim) => claim.username.toLowerCase() === username && claim.status !== 'Supplied').forEach((claim) => { claim.status = 'Paid'; }); save(); render(); notify(`@${button.dataset.username} claims marked paid.`); }
+  if (action === 'mark-paid') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Paid'; const linkedClaims = state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)); linkedClaims.forEach((claim) => { claim.status = 'Paid'; }); save({ publicOnly: true }); render(); notify(`${linkedClaims.length ? linkedClaims.length : 'No'} claim${linkedClaims.length === 1 ? '' : 's'} for @${payment.username} marked paid.`); }
+  if (action === 'mark-claim-paid') { const claim = state.claims[Number(button.dataset.claim)]; if (claim) { claim.status = 'Paid'; save({ publicOnly: true }); render(); notify(`@${claim.username} marked paid.`); } }
+  if (action === 'mark-user-paid') { const username = button.dataset.username.toLowerCase(); state.claims.filter((claim) => claim.username.toLowerCase() === username && claim.status !== 'Supplied').forEach((claim) => { claim.status = 'Paid'; }); save({ publicOnly: true }); render(); notify(`@${button.dataset.username} claims marked paid.`); }
   if (action === 'packing-user') { const group = claimsByUsername().find((entry) => entry.username.toLowerCase() === button.dataset.username.toLowerCase()); if (group) downloadFile(`packing-slip-${group.username}.txt`, packingSlipForClaims(group.username, group.claims)); }
   if (action === 'packing-claim') { const claim = state.claims[Number(button.dataset.claim)]; if (claim) { downloadFile(`packing-slip-${claim.username}-${claim.goId}.txt`, packingSlipForClaims(claim.username, [{ claim }])); notify(`Packing slip downloaded for @${claim.username}.`); } }
   if (action === 'manual-payment') openModal('Add payment', `<p class="eyebrow">ADMIN PAYMENT</p><h2>Record a payment</h2><p class="modal-copy">Add an offline payment and optionally mark all matching claims paid.</p><form data-form="manual-payment"><label>Instagram username<input name="username" required placeholder="@username" /></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Payment method<select name="method"><option>Bank transfer</option><option>PayPal</option><option>Cash</option><option>Other</option></select></label><label>Reference<input name="reference" required placeholder="Receipt or transaction reference" /></label><label><input name="markPaid" type="checkbox" checked /> Mark this username’s unpaid claims as paid</label><button class="primary-button" type="submit">Add payment ↗</button></form>`);
