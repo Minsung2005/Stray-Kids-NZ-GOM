@@ -110,6 +110,7 @@ function randomSalt() {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 let privateLoaded = false;
+let shrunkImages = false;
 const save = ({ publicOnly = false } = {}) => {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if (supabaseClient && cloudReady && isAdminUnlocked()) {
@@ -173,7 +174,7 @@ async function loadCloudState() {
     if (privateResult.data?.state) {
       state = privateResult.data.state;
       state.payments = dedupePayments(state.payments);
-      if (await shrinkStateImages(state)) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); save(); }
+      if (await shrinkStateImages(state)) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); shrunkImages = true; }
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       render();
     }
@@ -186,6 +187,7 @@ async function loadCloudState() {
   await loadUserAccounts();
   cloudReady = true;
   document.querySelector('.sync')?.classList.add('live');
+  if (shrunkImages) { shrunkImages = false; save(); }
 }
 async function loadClaimEvents() {
   if (!supabaseClient) return;
