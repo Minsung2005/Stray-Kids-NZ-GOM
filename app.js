@@ -173,6 +173,7 @@ async function loadCloudState() {
     if (privateResult.data?.state) {
       state = privateResult.data.state;
       state.payments = dedupePayments(state.payments);
+      if (await shrinkStateImages(state)) { localStorage.setItem(STORE_KEY, JSON.stringify(state)); save(); }
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       render();
     }
@@ -226,7 +227,38 @@ const notify = (message) => { toast.textContent = message; toast.classList.add('
 const basket = () => JSON.parse(localStorage.getItem('go-manager-basket') || '[]');
 const saveBasket = (items) => localStorage.setItem('go-manager-basket', JSON.stringify(items));
 function downloadFile(filename, contents, type = 'text/plain') { const blob = new Blob([contents], { type }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click(); URL.revokeObjectURL(link.href); }
-function readPhoto(file) { return file && file.size ? new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }) : Promise.resolve(null); }
+function shrinkImage(src, max = 800, quality = 0.75) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const out = canvas.toDataURL('image/jpeg', quality);
+      resolve(out.length < src.length ? out : src);
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+function readPhoto(file) { return file && file.size ? new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => shrinkImage(reader.result).then(resolve); reader.onerror = reject; reader.readAsDataURL(file); }) : Promise.resolve(null); }
+async function shrinkStateImages(value) {
+  let changed = false;
+  const walk = async (node) => {
+    if (Array.isArray(node)) { for (const child of node) await walk(child); return; }
+    if (!node || typeof node !== 'object') return;
+    for (const key of Object.keys(node)) {
+      const v = node[key];
+      if (typeof v === 'string' && v.startsWith('data:image') && v.length > 150000) {
+        const out = await shrinkImage(v);
+        if (out !== v) { node[key] = out; changed = true; }
+      } else await walk(v);
+    }
+  };
+  await walk(value);
+  return changed;
+}
 function closeModal() { document.querySelector('.modal-backdrop')?.remove(); }
 function openModal(title, body) { closeModal(); document.body.insertAdjacentHTML('beforeend', `<div class="modal-backdrop" data-modal><div class="modal" role="dialog" aria-modal="true"><button class="modal-close" data-action="close-modal" aria-label="Close">×</button>${body}</div></div>`); document.querySelector('.modal-backdrop input')?.focus(); }
 const goById = (id) => state.orders.find((go) => go.id === id);
