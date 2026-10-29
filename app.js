@@ -224,6 +224,8 @@ async function publishLocalClaims() {
     status: claim.status
   }))).select('id');
   if (result.error && result.error.code !== '42P01') throw new Error(`Claim publish failed: ${result.error.message}`);
+  (result.data || []).forEach((row, i) => { claims[i].cloudClaimId = row.id; });
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
 }
 const notify = (message) => { toast.textContent = message; toast.classList.add('show'); window.clearTimeout(notify.timeout); notify.timeout = window.setTimeout(() => toast.classList.remove('show'), 2600); };
 const basket = () => JSON.parse(localStorage.getItem('go-manager-basket') || '[]');
