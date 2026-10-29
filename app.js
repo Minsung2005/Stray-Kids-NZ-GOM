@@ -109,6 +109,7 @@ function randomSalt() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+let privateLoaded = false;
 const save = ({ publicOnly = false } = {}) => {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if (supabaseClient && cloudReady && isAdminUnlocked()) {
@@ -116,7 +117,7 @@ const save = ({ publicOnly = false } = {}) => {
     const writes = [
       supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() })
     ];
-    if (!publicOnly) writes.push(supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() }));
+    if (!publicOnly && privateLoaded) writes.push(supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() }));
     return Promise.all(writes).then((results) => {
       cloudSaving = false;
       const failures = results.map((result, index) => result.error && `${index === 0 ? 'public' : 'private'} state: ${result.error.message}`).filter(Boolean);
@@ -164,9 +165,11 @@ async function loadCloudState() {
   if (isAdminUnlocked()) {
     const privateResult = await supabaseClient.from('app_private_state').select('state').eq('id', 'main').maybeSingle();
     if (privateResult.error) {
-      notify(`Private cloud load failed: ${privateResult.error.message}`);
+      notify(`Private cloud load failed (settings can still save): ${privateResult.error.message}`);
+      cloudReady = true;
       return;
     }
+    privateLoaded = true;
     if (privateResult.data?.state) {
       state = privateResult.data.state;
       state.payments = dedupePayments(state.payments);
