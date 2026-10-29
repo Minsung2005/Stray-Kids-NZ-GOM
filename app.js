@@ -117,19 +117,23 @@ const save = () => {
       supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() }),
       supabaseClient.from('app_private_state').upsert({ id: 'main', state, updated_at: new Date().toISOString() })
     ]).then(([publicResult, privateResult]) => {
-      const error = publicResult.error || privateResult.error;
-        cloudSaving = false;
-        if (error) {
-          document.querySelector('.sync')?.classList.remove('live');
-          notify(`Cloud save failed: ${error.message}`);
-        } else {
-          document.querySelector('.sync')?.classList.add('live');
-        }
+      cloudSaving = false;
+      const failures = [
+        publicResult.error && `public state: ${publicResult.error.message}`,
+        privateResult.error && `private state: ${privateResult.error.message}`
+      ].filter(Boolean);
+      if (failures.length) {
+        document.querySelector('.sync')?.classList.remove('live');
+        notify(`Cloud save failed — ${failures.join('; ')}`);
+        return false;
+      }
+      document.querySelector('.sync')?.classList.add('live');
+      return true;
       }).catch((error) => {
         cloudSaving = false;
         document.querySelector('.sync')?.classList.remove('live');
         notify(`Cloud save failed: ${error.message}`);
-        throw error;
+        return false;
       });
   }
   return Promise.resolve();
@@ -147,10 +151,7 @@ async function saveToLiveSite() {
   if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
     await publishLocalClaims();
-    await save();
-    notify('Saved to the live site.');
-  } catch {
-    // save() already reports the database error.
+    if (await save()) notify('Saved to the live site.');
   } finally {
     if (button) { button.disabled = false; button.textContent = 'Save to live site'; }
   }
@@ -575,7 +576,14 @@ document.addEventListener('submit', async (event) => {
   if (form.dataset.form === 'shipping') { closeModal(); notify('Shipping request submitted.'); }
   if (form.dataset.form === 'tracking') { const claim = form.dataset.claim === '' ? null : state.claims[Number(form.dataset.claim)]; if (claim) { claim.trackingNumber = data.get('tracking'); claim.carrier = data.get('carrier'); claim.status = 'Shipped'; save(); closeModal(); render(); notify(`Tracking saved for @${claim.username}.`); } else { closeModal(); notify(`Tracking saved: ${data.get('tracking')}.`); } }
   if (form.dataset.form === 'profit') { const margin = Number(data.get('revenue')) - Number(data.get('vendor')) - Number(data.get('shipping')) - Number(data.get('fees')); closeModal(); notify(`Estimated margin: ${money(margin)}.`); }
-  if (form.dataset.form === 'settings') { state.settings.organiser = data.get('organiser'); state.settings.instagram = data.get('instagram'); state.settings.threshold = Number(data.get('threshold')); save(); closeModal(); notify('Settings saved.'); }
+  if (form.dataset.form === 'settings') {
+    state.settings.organiser = data.get('organiser');
+    state.settings.instagram = data.get('instagram');
+    state.settings.threshold = Number(data.get('threshold'));
+    if (!await save()) return;
+    closeModal();
+    notify('Settings saved.');
+  }
   if (form.dataset.form === 'reset-password') { const username = form.dataset.username.toLowerCase(); const password = data.get('password'); if (password.length < 6) { notify('Password must be at least 6 characters.'); return; } const salt = randomSalt(); const account = { salt, hash: await hashPassword(password, salt), createdAt: state.userAccounts[username]?.createdAt || new Date().toISOString() }; try { await saveUserAccount(username, account); } catch (error) { notify(error.message); return; } state.userAccounts[username] = account; save(); closeModal(); notify(`Password reset for @${username}.`); }
   if (form.dataset.form === 'new-go') { const id = data.get('name').toLowerCase().replace(/[^a-z0-9]+/g, '-'); const image = await readPhoto(data.get('image')); state.orders.unshift({ id, name: data.get('name'), artist: data.get('artist'), type: data.get('type'), deadline: data.get('deadline'), paymentDeadline: data.get('paymentDeadline'), setsOnHand: Number(data.get('setsOnHand')), description: data.get('description') || 'New group order.', image: image || '', status: 'open', items: [{ id: `${id}-item`, name: 'First item', kind: 'merch', price: 0, stock: 0, claimed: 0, options: ['Standard set'] }] }); save(); closeModal(); render(); notify('New group order created.'); }
 });

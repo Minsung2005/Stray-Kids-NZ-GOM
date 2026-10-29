@@ -191,7 +191,7 @@ create or replace function public.is_admin() returns boolean language sql stable
   select exists (
     select 1 from public.admin_users
     where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
-  )
+  ) or lower(coalesce(auth.jwt() ->> 'email', '')) = lower(current_setting('app.admin_email', true))
 $$;
 
 alter table public.settings enable row level security;
