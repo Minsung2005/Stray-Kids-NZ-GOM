@@ -34,6 +34,17 @@ function dedupePayments(payments = []) {
     return true;
   });
 }
+function dedupeOpenClaims(claims = []) {
+  const seen = new Set();
+  return claims.filter(({ claim }) => {
+    const key = [claim.username, claim.goId, claim.amount, JSON.stringify(claim.selections || {})]
+      .map((value) => String(value ?? '').trim().toLowerCase())
+      .join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 const isAdminUnlocked = () => sessionStorage.getItem('go-manager-admin') === 'unlocked';
 const publicState = () => ({ settings: state.settings, orders: state.orders, shop: state.shop, rules: state.rules, claims: state.claims });
 let state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || DEMO;
@@ -369,9 +380,9 @@ function openGoPaymentGroups() {
   return state.orders
     .filter((go) => go.status === 'open')
     .map((go) => {
-      const claims = state.claims
+      const claims = dedupeOpenClaims(state.claims
         .map((claim, index) => ({ claim, index }))
-        .filter(({ claim }) => claim.goId === go.id && !['Paid', 'Supplied'].includes(claim.status));
+        .filter(({ claim }) => claim.goId === go.id && !['Paid', 'Supplied'].includes(claim.status)));
       return {
         go,
         claims,
@@ -384,7 +395,7 @@ function adminPayments() {
   const outstanding = goGroups.reduce((sum, group) => sum + group.claims.length, 0);
   const firstUnpaidIndex = goGroups.findIndex((group) => group.claims.length);
   const search = '<label class="admin-search"><span>Search</span><input type="search" data-admin-search="payments" placeholder="Username, GO or reference" autocomplete="off" /></label>';
-  const goSections = goGroups.map(({ go, claims, total }, index) => `<details class="payment-go-group" ${claims.length && index === firstUnpaidIndex ? 'open' : ''}><summary><span><strong>${go.name}</strong><small>${claims.length} unpaid claim${claims.length === 1 ? '' : 's'}</small></span><b>${money(total)}</b></summary><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount owed</th><th>Status</th><th></th></tr></thead><tbody>${claims.length ? claims.map(({ claim, index: claimIndex }) => `<tr data-admin-search-row="payments" data-search-text="${claim.username} ${go.name}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${claim.username}">@${claim.username}</button></td><td><strong>${money(claim.amount)}</strong></td><td><span class="claim-pill">${claim.status}</span></td><td><button class="table-action" data-action="edit-claim" data-claim="${claimIndex}">Adjust amount</button> <button class="table-action" data-action="mark-claim-paid" data-claim="${claimIndex}">Mark paid</button> <button class="table-action" data-action="packing-claim" data-claim="${claimIndex}">Packing slip</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Everyone is paid for this GO.</td></tr>'}</tbody></table></div></details>`).join('');
+  const goSections = goGroups.map(({ go, claims, total }, index) => `<details class="payment-go-group" ${claims.length && index === firstUnpaidIndex ? 'open' : ''}><summary><span><strong>${go.name}</strong><small>${claims.length} unpaid claim${claims.length === 1 ? '' : 's'}</small></span><b>${money(total)}</b></summary><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount owed</th><th>Status</th><th>Actions</th></tr></thead><tbody>${claims.length ? claims.map(({ claim, index: claimIndex }) => `<tr data-admin-search-row="payments" data-search-text="${claim.username} ${go.name}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${claim.username}">@${claim.username}</button></td><td><strong>${money(claim.amount)}</strong></td><td><span class="claim-pill">${claim.status}</span></td><td><button class="table-action" data-action="edit-claim" data-claim="${claimIndex}">Adjust amount</button> <button class="table-action" data-action="mark-claim-paid" data-claim="${claimIndex}">Mark paid</button> <button class="table-action" data-action="packing-claim" data-claim="${claimIndex}">Packing slip</button> <button class="reject-action" data-action="delete-claim" data-claim="${claimIndex}">Delete</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Everyone is paid for this GO.</td></tr>'}</tbody></table></div></details>`).join('');
   const paymentRows = dedupePayments(state.payments);
   return `<div class="admin-toolbar"><div><h2>Payments</h2><p class="muted">Open group orders are separated below so you can work through each GO.</p></div>${search}<button class="primary-button" data-action="manual-payment">+ Add payment</button><span class="queue-count">${outstanding} outstanding</span></div><section class="payment-claims"><div class="sheet-heading"><div><p class="eyebrow">WHO OWES ME</p><h2>Open group orders</h2><p class="muted">Expand a GO to see its unpaid joiners.</p></div></div><div class="payment-go-list">${goSections || '<div class="table-card"><p class="muted">No open group orders.</p></div>'}</div></section><section class="payment-history"><div class="sheet-heading"><div><p class="eyebrow">RECEIVED PAYMENTS</p><h2>Payment history</h2><p class="muted">Each payment is listed once.</p></div></div><div class="table-card"><table><thead><tr><th>Joiner</th><th>Amount</th><th>Method / ref</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>${paymentRows.map((payment) => `<tr data-admin-search-row="payments" data-search-text="${payment.username} ${payment.go} ${payment.method} ${payment.reference} ${payment.status}"><td><button class="table-action admin-username" data-action="view-customer" data-username="${payment.username}">@${payment.username}</button></td><td>${money(payment.amount)}</td><td>${payment.method}<br><span class="muted">${payment.reference}</span></td><td><span class="claim-pill ${payment.status.toLowerCase()}">${payment.status}</span></td><td>${payment.submitted}</td><td><button class="reject-action" data-action="delete-payment" data-payment="${payment.id}">Delete</button></td></tr>`).join('')}</tbody></table></div></section>`;
 }
