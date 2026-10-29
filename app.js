@@ -115,6 +115,7 @@ const save = ({ publicOnly = false } = {}) => {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if (supabaseClient && cloudReady && isAdminUnlocked()) {
     cloudSaving = true;
+    syncClaimStatuses();
     const writes = [
       supabaseClient.from('app_public_state').upsert({ id: 'main', state: publicState(), updated_at: new Date().toISOString() })
     ];
@@ -190,6 +191,17 @@ async function loadCloudState() {
   document.querySelector('.sync')?.classList.add('live');
   if (shrunkImages) { shrunkImages = false; save(); }
 }
+const cloudClaimStatus = new Map();
+async function syncClaimStatuses() {
+  if (!supabaseClient || !isAdminUnlocked()) return;
+  const changed = state.claims.filter((claim) => claim.cloudClaimId && cloudClaimStatus.get(claim.cloudClaimId) !== claim.status);
+  for (const status of [...new Set(changed.map((claim) => claim.status))]) {
+    const ids = changed.filter((claim) => claim.status === status).map((claim) => claim.cloudClaimId);
+    const result = await supabaseClient.from('claim_events').update({ status }).in('id', ids).select('id');
+    if (result.error) { notify(`Claim status sync failed: ${result.error.message}`); return; }
+    (result.data || []).forEach((row) => cloudClaimStatus.set(row.id, status));
+  }
+}
 async function deleteCloudClaims(ids) {
   if (!ids.length || !supabaseClient) return { error: null, failed: [] };
   const result = await supabaseClient.from('claim_events').delete().in('id', ids);
@@ -205,20 +217,24 @@ async function loadClaimEvents() {
     if (result.error.code !== '42P01') notify(`Claim sync failed: ${result.error.message}`);
     return;
   }
+  const localByCloudId = new Map(isAdminUnlocked() ? state.claims.filter((claim) => claim.cloudClaimId).map((claim) => [claim.cloudClaimId, claim]) : []);
+  result.data.forEach((claim) => cloudClaimStatus.set(claim.id, claim.status));
   const unpublishedClaims = isAdminUnlocked() ? state.claims.filter((claim) => !claim.cloudClaimId) : [];
   state.claims = result.data.map((claim) => ({
+    ...(localByCloudId.get(claim.id) || {}),
     cloudClaimId: claim.id,
     username: claim.instagram_username,
     goId: claim.go_id,
     itemId: claim.item_id,
     selections: claim.selections || {},
     amount: Number(claim.amount),
-    status: claim.status,
-    credit: 0,
+    status: localByCloudId.get(claim.id)?.status || claim.status,
+    credit: localByCloudId.get(claim.id)?.credit || 0,
     createdAt: claim.created_at
   })).concat(unpublishedClaims);
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   render();
+  syncClaimStatuses();
 }
 async function publishLocalClaims() {
   if (!supabaseClient || !isAdminUnlocked()) return;
