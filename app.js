@@ -190,6 +190,14 @@ async function loadCloudState() {
   document.querySelector('.sync')?.classList.add('live');
   if (shrunkImages) { shrunkImages = false; save(); }
 }
+async function deleteCloudClaims(ids) {
+  if (!ids.length || !supabaseClient) return { error: null, failed: [] };
+  const result = await supabaseClient.from('claim_events').delete().in('id', ids);
+  if (result.error) return { error: result.error, failed: ids };
+  const left = await supabaseClient.from('claim_events').select('id').in('id', ids);
+  if (left.error) return { error: left.error, failed: ids };
+  return { error: null, failed: left.data.map((row) => row.id) };
+}
 async function loadClaimEvents() {
   if (!supabaseClient) return;
   const result = await supabaseClient.from('claim_events').select('id,go_id,item_id,instagram_username,selections,amount,status,created_at').order('created_at', { ascending: true });
@@ -505,15 +513,20 @@ document.addEventListener('click', async (event) => { const button = event.targe
     const targets = [...document.querySelectorAll('.bulk-claim:checked')].map((box) => state.claims[Number(box.value)]).filter(Boolean);
     if (!targets.length) { notify('Tick the claims you want to delete first.'); return; }
     if (!window.confirm(`Delete ${targets.length} claim${targets.length === 1 ? '' : 's'}? This returns their reserved stock.`)) return;
-    const cloudIds = targets.map((claim) => claim.cloudClaimId).filter(Boolean);
-    if (cloudIds.length && supabaseClient) { const result = await supabaseClient.from('claim_events').delete().in('id', cloudIds); if (result.error) { notify(`Bulk delete failed: ${result.error.message}. Sign out and back in to admin, then try again.`); return; } }
-    targets.forEach(restoreClaimStock);
-    state.claims = state.claims.filter((claim) => !targets.includes(claim));
-    save(); render(); notify(`${targets.length} claim${targets.length === 1 ? '' : 's'} deleted and stock restored.`);
+    const withCloud = targets.filter((claim) => claim.cloudClaimId);
+    const outcome = await deleteCloudClaims(withCloud.map((claim) => claim.cloudClaimId));
+    const blocked = new Set(outcome.failed);
+    if (outcome.error && !outcome.failed.length) { notify(`Bulk delete failed: ${outcome.error.message}`); return; }
+    const removable = targets.filter((claim) => !blocked.has(claim.cloudClaimId));
+    if (blocked.size) notify(`${blocked.size} claim${blocked.size === 1 ? '' : 's'} could not be deleted from the cloud${outcome.error ? `: ${outcome.error.message}` : ' (admin permission missing)'}. Sign out and back in to admin, then retry.`);
+    if (!removable.length) return;
+    removable.forEach(restoreClaimStock);
+    state.claims = state.claims.filter((claim) => !removable.includes(claim));
+    save(); render(); if (!blocked.size) notify(`${removable.length} claim${removable.length === 1 ? '' : 's'} deleted and stock restored.`);
     if (button.dataset.username) adminCustomerOrders(button.dataset.username);
     return;
   }
-  if (action === 'delete-claim') { const index = Number(button.dataset.claim); const claim = state.claims[index]; if (claim && window.confirm(`Delete @${claim.username}'s claim? This will return the reserved stock.`)) { restoreClaimStock(claim); if (claim.cloudClaimId && supabaseClient) { const result = await supabaseClient.from('claim_events').delete().eq('id', claim.cloudClaimId).select('id'); if (result.error) { notify(`Claim delete failed: ${result.error.message}. Sign out and back in to admin, then try again.`); return; } if (!result.data?.length && !window.confirm('The cloud did not confirm this delete (it may already be gone, or your admin session expired). Remove it from this list anyway?')) return; } state.claims.splice(index, 1); save(); render(); notify('Claim deleted and stock restored.'); if (button.dataset.reopenCustomer) adminCustomerOrders(button.dataset.reopenCustomer); } }
+  if (action === 'delete-claim') { const index = Number(button.dataset.claim); const claim = state.claims[index]; if (claim && window.confirm(`Delete @${claim.username}'s claim? This will return the reserved stock.`)) { restoreClaimStock(claim); if (claim.cloudClaimId && supabaseClient) { const result = await deleteCloudClaims([claim.cloudClaimId]); if (result.error || result.failed.length) { notify(`Claim delete blocked by the cloud${result.error ? `: ${result.error.message}` : ' (admin permission missing)'}. Sign out and back in to admin, then try again.`); return; } } state.claims.splice(index, 1); save(); render(); notify('Claim deleted and stock restored.'); if (button.dataset.reopenCustomer) adminCustomerOrders(button.dataset.reopenCustomer); } }
   if (action === 'mark-supplied') { const payment = state.payments.find((entry) => entry.id === Number(button.dataset.payment)); const go = state.orders.find((entry) => entry.name === payment.go); payment.status = 'Supplied'; state.claims.filter((claim) => claim.username === payment.username && (!go || claim.goId === go.id)).forEach((claim) => { claim.status = 'Supplied'; }); save(); render(); notify(`${payment.go} marked supplied.`); }
   if (action === 'new-product') openModal('New product', `<p class="eyebrow">SHOP LISTING</p><h2>Add a product</h2><form data-form="product"><label>Product name<input name="name" required placeholder="e.g. Felix lucky draw" /></label><div class="form-row"><label>Category<select name="category"><option>Album</option><option>Photocard</option><option>Merch</option><option>Accessories</option></select></label><label>Price<input name="price" type="number" min="0" step="0.01" required placeholder="14.00" /></label></div><label>Stock<input name="stock" type="number" min="0" step="1" required value="1" /></label><label>Description<textarea name="description" rows="3" placeholder="What is included?"></textarea></label><label class="photo-field">Product photo<input class="photo-input" name="image" type="file" accept="image/*" /><span class="photo-preview">Choose an image to preview it here.</span></label><button class="primary-button" type="submit">Add product ↗</button></form>`);
   if (action === 'edit-product') { const product = state.shop.find((item) => item.id === button.dataset.product); openModal('Edit product', `<p class="eyebrow">SHOP LISTING</p><h2>Edit product</h2><form data-form="product" data-product="${product.id}"><label>Product name<input name="name" required value="${product.name}" /></label><div class="form-row"><label>Category<select name="category"><option ${product.category === 'Album' ? 'selected' : ''}>Album</option><option ${product.category === 'Photocard' ? 'selected' : ''}>Photocard</option><option ${product.category === 'Merch' ? 'selected' : ''}>Merch</option><option ${product.category === 'Accessories' ? 'selected' : ''}>Accessories</select></label><label>Price<input name="price" type="number" min="0" step="0.01" required value="${product.price}" /></label></div><label>Stock<input name="stock" type="number" min="0" step="1" required value="${product.stock}" /></label><label>Description<textarea name="description" rows="3">${product.description}</textarea></label><label class="photo-field">Product photo<input class="photo-input" name="image" type="file" accept="image/*" /><span class="photo-preview">${product.image ? `<img src="${product.image}" alt="Current product photo" />` : 'Choose a new image or keep the current one.'}</span></label><button class="primary-button" type="submit">Save changes ↗</button></form>`); }
